@@ -8,10 +8,12 @@ interface RiskBadgeProps {
   className?: string;
 }
 
-const riskConfig: Record<
-  RiskLevel,
-  { label: string; className: string }
-> = {
+const riskConfig: Record<RiskLevel, { label: string; className: string }> = {
+  critical: {
+    label: "Critical",
+    className:
+      "bg-destructive/20 text-destructive border-destructive/40 hover:bg-destructive/20 font-semibold",
+  },
   high: {
     label: "High Risk",
     className:

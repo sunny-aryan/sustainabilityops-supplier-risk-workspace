@@ -7,12 +7,15 @@ import {
   FilePlus2,
   TrendingUp,
   UserPlus,
+  ShieldAlert,
+  Users,
 } from "lucide-react";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
+  CardDescription,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -20,13 +23,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { StatCard } from "@/components/shared/stat-card";
 import { SectionHeader } from "@/components/shared/section-header";
 import { RiskBadge } from "@/components/shared/risk-badge";
+import { RemediationBadge } from "@/components/shared/remediation-badge";
+import { suppliers, recentActivity } from "@/data/suppliers";
 import {
-  dashboardStats,
-  mockSuppliers,
-  recentActivity,
-  riskDistribution,
-} from "@/data/mock-data";
-import type { ActivityItem, Role } from "@/types";
+  calculatePortfolioStats,
+  getRiskDistribution,
+  getSuppliersNeedingAction,
+} from "@/utils/portfolio";
+import type { ActivityItem, RiskLevel, Role } from "@/types";
 import { cn } from "@/lib/utils";
 
 const activityIcons: Record<ActivityItem["type"], React.ElementType> = {
@@ -35,6 +39,7 @@ const activityIcons: Record<ActivityItem["type"], React.ElementType> = {
   risk: TrendingUp,
   onboarded: UserPlus,
   approved: CheckCircle2,
+  escalated: ShieldAlert,
 };
 
 const activityIconColors: Record<ActivityItem["type"], string> = {
@@ -43,35 +48,43 @@ const activityIconColors: Record<ActivityItem["type"], string> = {
   risk: "text-warning",
   onboarded: "text-success",
   approved: "text-success",
+  escalated: "text-destructive",
+};
+
+const riskBarColors: Record<RiskLevel, string> = {
+  critical: "[&>[data-slot=progress-indicator]]:bg-destructive",
+  high: "[&>[data-slot=progress-indicator]]:bg-destructive/70",
+  medium: "[&>[data-slot=progress-indicator]]:bg-warning",
+  low: "[&>[data-slot=progress-indicator]]:bg-success",
 };
 
 const roleConfig: Record<
   Role,
   {
     pageDescription: string;
-    needsActionDescription: string;
+    actionDescription: string;
     alertMessage: string | null;
   }
 > = {
   procurement: {
     pageDescription:
-      "Monitor supplier risk exposure, track sourcing decisions, and follow up on overdue remediation across your supply chain.",
-    needsActionDescription:
-      "Suppliers requiring sourcing review or remediation follow-up",
+      "Supplier risk exposure across your portfolio. Prioritise sourcing decisions and follow up on overdue remediation.",
+    actionDescription:
+      "Highest-priority suppliers requiring sourcing review or remediation follow-up",
     alertMessage: null,
   },
   "esg-analyst": {
     pageDescription:
-      "Review evidence quality, apply policy rules, and maintain audit-ready compliance records across the supplier portfolio.",
-    needsActionDescription:
-      "Suppliers with evidence gaps or compliance policy flags",
+      "Evidence gaps, policy readiness, and audit-trail status across the supplier portfolio.",
+    actionDescription:
+      "Suppliers with evidence gaps, compliance policy flags, or escalated findings",
     alertMessage:
       "ESG Analyst view: Action Queue and Methodology & Trust Center are your primary workspaces for evidence review and policy governance.",
   },
   supplier: {
     pageDescription:
       "Internal risk overview. As a Supplier User, your primary workspace is the Supplier Portal.",
-    needsActionDescription: "Suppliers currently flagged for attention",
+    actionDescription: "Suppliers currently flagged for attention",
     alertMessage:
       "Demo role view: Supplier users would not normally access this internal dashboard. Your primary workspace is the Supplier Portal.",
   },
@@ -82,10 +95,13 @@ interface DashboardPageProps {
 }
 
 export function DashboardPage({ role }: DashboardPageProps) {
-  const needsAction = mockSuppliers.filter(
-    (s) => s.riskLevel === "high" || s.remediationStatus === "overdue"
-  );
+  const stats = calculatePortfolioStats(suppliers);
+  const riskDist = getRiskDistribution(suppliers);
+  const actionSuppliers = getSuppliersNeedingAction(suppliers);
   const config = roleConfig[role];
+
+  const belowThreshold = suppliers.filter((s) => s.evidenceCompleteness < 60).length;
+  const aboveTarget = suppliers.filter((s) => s.evidenceCompleteness >= 85).length;
 
   return (
     <div className="space-y-6">
@@ -98,124 +114,206 @@ export function DashboardPage({ role }: DashboardPageProps) {
         </Alert>
       )}
 
-      <SectionHeader
-        title="Dashboard"
-        description={config.pageDescription}
-      />
+      <SectionHeader title="Dashboard" description={config.pageDescription} />
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <StatCard
-          label="Total Suppliers"
-          value={dashboardStats.totalSuppliers}
+          label="Suppliers Monitored"
+          value={stats.totalSuppliers}
           description="Across all categories"
           icon={<Building2 className="size-4" />}
         />
         <StatCard
-          label="High-Risk Suppliers"
-          value={dashboardStats.highRiskSuppliers}
-          trend="↑ 3 since last quarter"
+          label="High / Critical Risk"
+          value={stats.highCriticalRisk}
+          trend={`${riskDist.find((r) => r.level === "critical")?.count ?? 0} critical risk`}
           trendUp={false}
           icon={<AlertTriangle className="size-4" />}
           accentClassName="bg-destructive/10 text-destructive"
         />
         <StatCard
-          label="Evidence Completion"
-          value={`${dashboardStats.evidenceCompletionRate}%`}
-          trend="↑ 8% from last month"
-          trendUp={true}
+          label="Avg. Evidence Completion"
+          value={`${stats.avgEvidenceCompleteness}%`}
+          trend={`${belowThreshold} suppliers below 60%`}
+          trendUp={false}
           icon={<FileCheck2 className="size-4" />}
-          accentClassName="bg-success/10 text-success"
+          accentClassName="bg-warning/10 text-warning"
         />
         <StatCard
-          label="Overdue Remediation"
-          value={dashboardStats.overdueRemediationPlans}
-          description="Plans requiring attention"
+          label="Overdue / Escalated"
+          value={stats.overdueRemediationPlans}
+          description="Remediation plans requiring action"
           icon={<Clock className="size-4" />}
+          accentClassName="bg-destructive/10 text-destructive"
+        />
+        <StatCard
+          label="Review Required"
+          value={stats.reviewRequired}
+          description="Based on evidence & criticality rules"
+          icon={<Users className="size-4" />}
           accentClassName="bg-warning/10 text-warning"
         />
       </div>
 
-      {/* Middle row */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* Suppliers needing action */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-3">
-            <SectionHeader
-              title="Suppliers Needing Action"
-              description={config.needsActionDescription}
-            />
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {needsAction.map((supplier) => (
-              <div
-                key={supplier.id}
-                className="flex items-center justify-between gap-3 rounded-md border px-4 py-3 text-sm"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-foreground">
-                    {supplier.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {supplier.category} · {supplier.country}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <RiskBadge
-                    level={supplier.riskLevel}
-                    score={supplier.riskScore}
-                  />
-                  {supplier.remediationStatus === "overdue" && (
-                    <Badge
-                      variant="outline"
-                      className="bg-destructive/10 text-destructive border-destructive/20 text-xs"
-                    >
-                      Overdue
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        {/* Risk distribution */}
+      {/* Middle row: risk distribution + evidence overview */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Risk Distribution</CardTitle>
+            <CardDescription className="text-xs">
+              Deterministic scoring across 5 ESG dimensions. Score ≥ 90 = Critical, ≥ 75 = High, ≥ 45 = Medium.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {riskDistribution.map((item) => (
-              <div key={item.label} className="space-y-1.5">
+            {riskDist.map((item) => (
+              <div key={item.level} className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium text-foreground">
-                    {item.label}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-foreground">{item.label}</span>
+                    {item.level === "critical" && (
+                      <Badge
+                        variant="outline"
+                        className="h-4 px-1 text-[10px] bg-destructive/10 text-destructive border-destructive/20"
+                      >
+                        Escalation trigger
+                      </Badge>
+                    )}
+                  </div>
                   <span className="text-muted-foreground">
                     {item.count} suppliers ({item.percentage}%)
                   </span>
                 </div>
                 <Progress
                   value={item.percentage}
-                  className={cn(
-                    "h-2",
-                    item.label === "High Risk" &&
-                      "[&>[data-slot=progress-indicator]]:bg-destructive",
-                    item.label === "Medium Risk" &&
-                      "[&>[data-slot=progress-indicator]]:bg-warning",
-                    item.label === "Low Risk" &&
-                      "[&>[data-slot=progress-indicator]]:bg-success"
-                  )}
+                  className={cn("h-2", riskBarColors[item.level])}
                 />
               </div>
             ))}
+          </CardContent>
+        </Card>
 
-            <div className="mt-2 rounded-md bg-muted px-3 py-2.5 text-xs text-muted-foreground">
-              Based on deterministic risk scoring across 47 monitored suppliers
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Evidence Completeness</CardTitle>
+            <CardDescription className="text-xs">
+              Evidence completeness determines whether suppliers can proceed through approval and procurement gating.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium text-foreground">Portfolio Average</span>
+                <span className="font-semibold text-foreground">{stats.avgEvidenceCompleteness}%</span>
+              </div>
+              <Progress
+                value={stats.avgEvidenceCompleteness}
+                className={cn(
+                  "h-3",
+                  stats.avgEvidenceCompleteness >= 75
+                    ? "[&>[data-slot=progress-indicator]]:bg-success"
+                    : stats.avgEvidenceCompleteness >= 55
+                    ? "[&>[data-slot=progress-indicator]]:bg-warning"
+                    : "[&>[data-slot=progress-indicator]]:bg-destructive"
+                )}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-md border bg-destructive/5 px-3 py-2.5 text-center">
+                <p className="text-2xl font-bold text-destructive">{belowThreshold}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Below 60%</p>
+                <p className="text-[10px] text-muted-foreground">requires attention</p>
+              </div>
+              <div className="rounded-md border bg-success/5 px-3 py-2.5 text-center">
+                <p className="text-2xl font-bold text-success">{aboveTarget}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Above 85%</p>
+                <p className="text-[10px] text-muted-foreground">meeting target</p>
+              </div>
+            </div>
+            <div className="rounded-md bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
+              Missing critical evidence blocks supplier approval regardless of risk score. Suppliers below 60% with High criticality are automatically flagged for review.
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Suppliers needing action */}
+      <Card>
+        <CardHeader className="pb-3">
+          <SectionHeader
+            title="Suppliers Needing Action"
+            description={config.actionDescription}
+          />
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/30">
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Supplier</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Country</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Category</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Risk</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Evidence</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Remediation</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Required Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {actionSuppliers.map((supplier, i) => (
+                  <tr
+                    key={supplier.id}
+                    className={cn(
+                      "border-b last:border-0",
+                      i % 2 === 0 ? "bg-background" : "bg-muted/20"
+                    )}
+                  >
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-foreground leading-tight">{supplier.name}</p>
+                      <p className="text-xs text-muted-foreground">{supplier.owner}</p>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                      {supplier.country}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                      {supplier.category}
+                    </td>
+                    <td className="px-4 py-3">
+                      <RiskBadge level={supplier.riskLevel} score={supplier.riskScore} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 min-w-[80px]">
+                        <Progress
+                          value={supplier.evidenceCompleteness}
+                          className={cn(
+                            "h-1.5 w-12",
+                            supplier.evidenceCompleteness >= 75
+                              ? "[&>[data-slot=progress-indicator]]:bg-success"
+                              : supplier.evidenceCompleteness >= 50
+                              ? "[&>[data-slot=progress-indicator]]:bg-warning"
+                              : "[&>[data-slot=progress-indicator]]:bg-destructive"
+                          )}
+                        />
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {supplier.evidenceCompleteness}%
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <RemediationBadge status={supplier.remediationStatus} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-xs text-muted-foreground max-w-[220px] leading-relaxed">
+                        {supplier.requiredActions[0] ?? "No pending actions"}
+                      </p>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Recent activity */}
       <Card>
@@ -241,9 +339,7 @@ export function DashboardPage({ role }: DashboardPageProps) {
                       <p className="text-sm text-foreground">
                         <span className="font-medium">{item.supplier}</span>
                         {" — "}
-                        <span className="text-muted-foreground">
-                          {item.action}
-                        </span>
+                        <span className="text-muted-foreground">{item.action}</span>
                       </p>
                     </div>
                     <span className="shrink-0 text-xs text-muted-foreground">
