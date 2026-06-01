@@ -9,6 +9,7 @@ import {
   UserPlus,
   ShieldAlert,
   Users,
+  ChevronRight,
 } from "lucide-react";
 import {
   Card,
@@ -30,7 +31,7 @@ import {
   getRiskDistribution,
   getSuppliersNeedingAction,
 } from "@/utils/portfolio";
-import type { ActivityItem, RiskLevel, Role } from "@/types";
+import type { ActivityItem, RiskLevel, Role, Page, SupplierFilters } from "@/types";
 import { cn } from "@/lib/utils";
 
 const activityIcons: Record<ActivityItem["type"], React.ElementType> = {
@@ -92,9 +93,11 @@ const roleConfig: Record<
 
 interface DashboardPageProps {
   role: Role;
+  onNavigate: (page: Page, filters?: SupplierFilters) => void;
+  onOpenSupplier: (id: string) => void;
 }
 
-export function DashboardPage({ role }: DashboardPageProps) {
+export function DashboardPage({ role, onNavigate, onOpenSupplier }: DashboardPageProps) {
   const stats = calculatePortfolioStats(suppliers);
   const riskDist = getRiskDistribution(suppliers);
   const actionSuppliers = getSuppliersNeedingAction(suppliers);
@@ -116,44 +119,83 @@ export function DashboardPage({ role }: DashboardPageProps) {
 
       <SectionHeader title="Dashboard" description={config.pageDescription} />
 
-      {/* KPI cards */}
+      {/* KPI cards — clickable where meaningful */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <StatCard
-          label="Suppliers Monitored"
-          value={stats.totalSuppliers}
-          description="Across all categories"
-          icon={<Building2 className="size-4" />}
-        />
-        <StatCard
-          label="High / Critical Risk"
-          value={stats.highCriticalRisk}
-          trend={`${riskDist.find((r) => r.level === "critical")?.count ?? 0} critical risk`}
-          trendUp={false}
-          icon={<AlertTriangle className="size-4" />}
-          accentClassName="bg-destructive/10 text-destructive"
-        />
-        <StatCard
-          label="Avg. Evidence Completion"
-          value={`${stats.avgEvidenceCompleteness}%`}
-          trend={`${belowThreshold} suppliers below 60%`}
-          trendUp={false}
-          icon={<FileCheck2 className="size-4" />}
-          accentClassName="bg-warning/10 text-warning"
-        />
-        <StatCard
-          label="Overdue / Escalated"
-          value={stats.overdueRemediationPlans}
-          description="Remediation plans requiring action"
-          icon={<Clock className="size-4" />}
-          accentClassName="bg-destructive/10 text-destructive"
-        />
-        <StatCard
-          label="Review Required"
-          value={stats.reviewRequired}
-          description="Based on evidence & criticality rules"
-          icon={<Users className="size-4" />}
-          accentClassName="bg-warning/10 text-warning"
-        />
+        <div
+          className="cursor-pointer group"
+          onClick={() => onNavigate("suppliers", {})}
+          title="View all suppliers"
+        >
+          <StatCard
+            label="Suppliers Monitored"
+            value={stats.totalSuppliers}
+            description="Click to view all suppliers"
+            icon={<Building2 className="size-4" />}
+            className="transition-colors group-hover:border-primary/40"
+          />
+        </div>
+        <div
+          className="cursor-pointer group"
+          onClick={() =>
+            onNavigate("suppliers", { riskLevel: "high-or-critical" })
+          }
+          title="View high & critical risk suppliers"
+        >
+          <StatCard
+            label="High / Critical Risk"
+            value={stats.highCriticalRisk}
+            trend={`${riskDist.find((r) => r.level === "critical")?.count ?? 0} critical risk`}
+            trendUp={false}
+            icon={<AlertTriangle className="size-4" />}
+            accentClassName="bg-destructive/10 text-destructive"
+            description="Click to filter by risk"
+            className="transition-colors group-hover:border-destructive/40"
+          />
+        </div>
+        <div
+          className="cursor-pointer group"
+          onClick={() => onNavigate("suppliers", { evidenceBucket: "below60" })}
+          title="View suppliers with evidence below 60%"
+        >
+          <StatCard
+            label="Avg. Evidence Completion"
+            value={`${stats.avgEvidenceCompleteness}%`}
+            trend={`${belowThreshold} suppliers below 60%`}
+            trendUp={false}
+            icon={<FileCheck2 className="size-4" />}
+            accentClassName="bg-warning/10 text-warning"
+            description="Click to view evidence gaps"
+            className="transition-colors group-hover:border-warning/40"
+          />
+        </div>
+        <div
+          className="cursor-pointer group"
+          onClick={() => onNavigate("suppliers", { remediationStatus: "overdue" })}
+          title="View overdue remediation"
+        >
+          <StatCard
+            label="Overdue / Escalated"
+            value={stats.overdueRemediationPlans}
+            description="Click to view overdue plans"
+            icon={<Clock className="size-4" />}
+            accentClassName="bg-destructive/10 text-destructive"
+            className="transition-colors group-hover:border-destructive/40"
+          />
+        </div>
+        <div
+          className="cursor-pointer group"
+          onClick={() => onNavigate("suppliers", { evidenceBucket: "below60" })}
+          title="View suppliers requiring review"
+        >
+          <StatCard
+            label="Review Required"
+            value={stats.reviewRequired}
+            description="Click to view review queue"
+            icon={<Users className="size-4" />}
+            accentClassName="bg-warning/10 text-warning"
+            className="transition-colors group-hover:border-warning/40"
+          />
+        </div>
       </div>
 
       {/* Middle row: risk distribution + evidence overview */}
@@ -167,7 +209,16 @@ export function DashboardPage({ role }: DashboardPageProps) {
           </CardHeader>
           <CardContent className="space-y-4">
             {riskDist.map((item) => (
-              <div key={item.level} className="space-y-1.5">
+              <button
+                key={item.level}
+                className="w-full text-left space-y-1.5 rounded-md p-1 -mx-1 hover:bg-muted/50 transition-colors cursor-pointer"
+                onClick={() =>
+                  onNavigate("suppliers", {
+                    riskLevel: item.level,
+                  })
+                }
+                title={`Filter by ${item.label}`}
+              >
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-foreground">{item.label}</span>
@@ -180,15 +231,16 @@ export function DashboardPage({ role }: DashboardPageProps) {
                       </Badge>
                     )}
                   </div>
-                  <span className="text-muted-foreground">
+                  <span className="flex items-center gap-1 text-muted-foreground">
                     {item.count} suppliers ({item.percentage}%)
+                    <ChevronRight className="size-3 opacity-50" />
                   </span>
                 </div>
                 <Progress
                   value={item.percentage}
                   className={cn("h-2", riskBarColors[item.level])}
                 />
-              </div>
+              </button>
             ))}
           </CardContent>
         </Card>
@@ -219,16 +271,24 @@ export function DashboardPage({ role }: DashboardPageProps) {
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-md border bg-destructive/5 px-3 py-2.5 text-center">
+              <button
+                className="rounded-md border bg-destructive/5 px-3 py-2.5 text-center hover:bg-destructive/10 transition-colors cursor-pointer"
+                onClick={() => onNavigate("suppliers", { evidenceBucket: "below60" })}
+                title="View suppliers below 60% evidence"
+              >
                 <p className="text-2xl font-bold text-destructive">{belowThreshold}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">Below 60%</p>
-                <p className="text-[10px] text-muted-foreground">requires attention</p>
-              </div>
-              <div className="rounded-md border bg-success/5 px-3 py-2.5 text-center">
+                <p className="text-[10px] text-muted-foreground">click to view</p>
+              </button>
+              <button
+                className="rounded-md border bg-success/5 px-3 py-2.5 text-center hover:bg-success/10 transition-colors cursor-pointer"
+                onClick={() => onNavigate("suppliers", { evidenceBucket: "above85" })}
+                title="View suppliers above 85% evidence"
+              >
                 <p className="text-2xl font-bold text-success">{aboveTarget}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">Above 85%</p>
-                <p className="text-[10px] text-muted-foreground">meeting target</p>
-              </div>
+                <p className="text-[10px] text-muted-foreground">click to view</p>
+              </button>
             </div>
             <div className="rounded-md bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
               Missing critical evidence blocks supplier approval regardless of risk score. Suppliers below 60% with High criticality are automatically flagged for review.
@@ -240,10 +300,18 @@ export function DashboardPage({ role }: DashboardPageProps) {
       {/* Suppliers needing action */}
       <Card>
         <CardHeader className="pb-3">
-          <SectionHeader
-            title="Suppliers Needing Action"
-            description={config.actionDescription}
-          />
+          <div className="flex items-start justify-between">
+            <SectionHeader
+              title="Suppliers Needing Action"
+              description={config.actionDescription}
+            />
+            <button
+              className="shrink-0 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors mt-1"
+              onClick={() => onNavigate("suppliers", {})}
+            >
+              View all <ChevronRight className="size-3" />
+            </button>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -264,9 +332,11 @@ export function DashboardPage({ role }: DashboardPageProps) {
                   <tr
                     key={supplier.id}
                     className={cn(
-                      "border-b last:border-0",
+                      "border-b last:border-0 cursor-pointer hover:bg-muted/40 transition-colors",
                       i % 2 === 0 ? "bg-background" : "bg-muted/20"
                     )}
+                    onClick={() => onOpenSupplier(supplier.id)}
+                    title={`View ${supplier.name} details`}
                   >
                     <td className="px-4 py-3">
                       <p className="font-medium text-foreground leading-tight">{supplier.name}</p>
@@ -311,6 +381,11 @@ export function DashboardPage({ role }: DashboardPageProps) {
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="border-t px-4 py-2.5">
+            <p className="text-xs text-muted-foreground">
+              {actionSuppliers.length} suppliers · Click a row to view supplier details
+            </p>
           </div>
         </CardContent>
       </Card>

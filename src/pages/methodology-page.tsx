@@ -109,6 +109,17 @@ export function MethodologyPage({ role }: MethodologyPageProps) {
         </AlertDescription>
       </Alert>
 
+      {/* Filter & priority note */}
+      <Alert className="border-muted bg-muted/30">
+        <BarChart3 className="size-4 text-muted-foreground" />
+        <AlertTitle className="text-sm font-semibold text-foreground">
+          Filtering & Priority Views
+        </AlertTitle>
+        <AlertDescription className="text-sm text-muted-foreground">
+          Supplier filtering, priority ordering, and the "Suppliers Needing Action" view are derived entirely from deterministic supplier attributes and policy rules — not AI-generated rankings. Filters apply rule-based logic: risk score thresholds, remediation status flags, and evidence completeness buckets. No AI inference is involved in supplier ordering or filter results.
+        </AlertDescription>
+      </Alert>
+
       {/* Methodology cards */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {methodologyCards.map((card) => (

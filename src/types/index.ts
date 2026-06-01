@@ -18,8 +18,8 @@ export type RemediationStatus =
   | "escalated"
   | "complete";
 export type Criticality = "High" | "Medium" | "Low";
+export type EvidenceCompletionBucket = "below60" | "60to84" | "above85";
 
-// Rich supplier type used in suppliers.ts
 export interface Supplier {
   id: string;
   name: string;
@@ -39,6 +39,14 @@ export interface Supplier {
   requiredActions: string[];
   owner: string;
   nextReviewDate: string;
+}
+
+export interface SupplierFilters {
+  search?: string;
+  riskLevel?: RiskLevel | "high-or-critical" | "all";
+  category?: string;
+  remediationStatus?: RemediationStatus | "all";
+  evidenceBucket?: EvidenceCompletionBucket | "all";
 }
 
 export interface DashboardStats {
