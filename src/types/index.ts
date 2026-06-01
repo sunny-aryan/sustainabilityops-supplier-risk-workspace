@@ -102,6 +102,68 @@ export interface TimelineEvent {
   systemGenerated: boolean;
 }
 
+// Remediation plan types
+export type RemediationPlanStatus =
+  | "Draft"
+  | "Sent to Supplier"
+  | "In Progress"
+  | "Supplier Responded"
+  | "Under Review"
+  | "Complete"
+  | "Escalated"
+  | "Overdue";
+
+export type RemediationSeverity = "Low" | "Medium" | "High" | "Critical";
+
+export type MilestoneStatus =
+  | "Not Started"
+  | "Requested"
+  | "Submitted"
+  | "Under Review"
+  | "Complete"
+  | "Blocked";
+
+export type MilestoneOwner =
+  | "Procurement Manager"
+  | "ESG / Compliance Analyst"
+  | "Supplier User";
+
+export interface RemediationMilestone {
+  id: string;
+  title: string;
+  status: MilestoneStatus;
+  dueDate: string;
+  owner: MilestoneOwner;
+  requiredEvidence: string[];
+  blocksApproval: boolean;
+}
+
+export interface RemediationMessage {
+  id: string;
+  date: string;
+  author: string;
+  role: "Procurement Manager" | "ESG / Compliance Analyst" | "Supplier User" | "System";
+  body: string;
+}
+
+export interface RemediationPlan {
+  id: string;
+  supplierId: string;
+  title: string;
+  status: RemediationPlanStatus;
+  severity: RemediationSeverity;
+  owner: string;
+  supplierContact: string;
+  dueDate: string;
+  createdAt: string;
+  updatedAt: string;
+  issueSummary: string;
+  requestedActions: string[];
+  milestones: RemediationMilestone[];
+  messages: RemediationMessage[];
+  blocksProcurementApproval: boolean;
+}
+
 // Supplier interface
 export interface Supplier {
   id: string;

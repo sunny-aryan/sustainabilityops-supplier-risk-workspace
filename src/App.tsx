@@ -7,6 +7,7 @@ import { SupplierDetailPage } from "@/pages/supplier-detail-page";
 import { ActionQueuePage } from "@/pages/action-queue-page";
 import { SupplierPortalPage } from "@/pages/supplier-portal-page";
 import { MethodologyPage } from "@/pages/methodology-page";
+import { useRemediationStore } from "@/utils/remediation";
 import type { Page, Role, SupplierFilters } from "@/types";
 
 interface PageContentProps {
@@ -17,6 +18,7 @@ interface PageContentProps {
   onNavigate: (page: Page, filters?: SupplierFilters) => void;
   onOpenSupplier: (id: string) => void;
   onBackFromDetail: () => void;
+  remediationStore: ReturnType<typeof useRemediationStore>;
 }
 
 function PageContent({
@@ -27,6 +29,7 @@ function PageContent({
   onNavigate,
   onOpenSupplier,
   onBackFromDetail,
+  remediationStore,
 }: PageContentProps) {
   if (supplierDetailId) {
     return (
@@ -34,6 +37,7 @@ function PageContent({
         supplierId={supplierDetailId}
         role={role}
         onBack={onBackFromDetail}
+        remediationStore={remediationStore}
       />
     );
   }
@@ -59,10 +63,11 @@ function PageContent({
         <ActionQueuePage
           role={role}
           onOpenSupplier={onOpenSupplier}
+          remediationStore={remediationStore}
         />
       );
     case "supplier-portal":
-      return <SupplierPortalPage role={role} />;
+      return <SupplierPortalPage role={role} remediationStore={remediationStore} />;
     case "methodology":
       return <MethodologyPage role={role} />;
     default:
@@ -81,6 +86,7 @@ export function App() {
   const [currentRole, setCurrentRole] = useState<Role>("procurement");
   const [supplierDetailId, setSupplierDetailId] = useState<string | null>(null);
   const [supplierFilters, setSupplierFilters] = useState<SupplierFilters>({});
+  const remediationStore = useRemediationStore();
 
   function handleRoleChange(role: Role) {
     setCurrentRole(role);
@@ -128,6 +134,7 @@ export function App() {
         onNavigate={handleNavigate}
         onOpenSupplier={handleOpenSupplier}
         onBackFromDetail={handleBackFromDetail}
+        remediationStore={remediationStore}
       />
     </AppLayout>
   );

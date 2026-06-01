@@ -14,10 +14,13 @@ import {
   FileX,
   Clock,
   BrainCircuit,
-  GitCommitHorizontal as _GitCommitHorizontal,
   FileSearch,
   Cpu,
   Building2,
+  Send,
+  AlertOctagon,
+  MessageSquare,
+  CheckSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +49,8 @@ import { suppliers } from "@/data/suppliers";
 import { getEvidenceForSupplier } from "@/data/evidence";
 import { getComplianceMappingsForSupplier } from "@/data/complianceMappings";
 import { getTimelineForSupplier } from "@/data/activityTimeline";
+import { canCompleteMilestone, canEscalatePlan, canSendToSupplier, isProcurementBlocked, useRemediationStore } from "@/utils/remediation";
+import { toast } from "sonner";
 import type {
   Role,
   EvidenceItemStatus,
@@ -53,6 +58,9 @@ import type {
   ComplianceApplicability,
   TimelineEventSource,
   TimelineEventType,
+  MilestoneStatus,
+  RemediationPlan,
+  Supplier,
 } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -62,6 +70,7 @@ interface SupplierDetailPageProps {
   supplierId: string;
   role: Role;
   onBack: () => void;
+  remediationStore: ReturnType<typeof useRemediationStore>;
 }
 
 // ─── Status badge helpers ───────────────────────────────────────────────────────
@@ -133,6 +142,370 @@ const timelineEventIconColors: Record<TimelineEventType, string> = {
   policy_triggered: "text-destructive",
 };
 
+// ─── Milestone status config ─────────────────────────────────────────────────────
+
+const milestoneStatusConfig: Record<MilestoneStatus, { label: string; className: string }> = {
+  "Not Started": { label: "Not Started", className: "bg-muted text-muted-foreground border-border" },
+  Requested: { label: "Requested", className: "bg-warning/10 text-warning border-warning/20" },
+  Submitted: { label: "Submitted", className: "bg-primary/10 text-primary border-primary/20" },
+  "Under Review": { label: "Under Review", className: "bg-primary/10 text-primary border-primary/20" },
+  Complete: { label: "Complete", className: "bg-success/10 text-success border-success/20" },
+  Blocked: { label: "Blocked", className: "bg-destructive/10 text-destructive border-destructive/20" },
+};
+
+const planStatusConfig: Record<string, { label: string; className: string }> = {
+  Draft: { label: "Draft", className: "bg-muted text-muted-foreground border-border" },
+  "Sent to Supplier": { label: "Sent to Supplier", className: "bg-primary/10 text-primary border-primary/20" },
+  "In Progress": { label: "In Progress", className: "bg-primary/10 text-primary border-primary/20" },
+  "Supplier Responded": { label: "Supplier Responded", className: "bg-success/10 text-success border-success/20" },
+  "Under Review": { label: "Under Review", className: "bg-primary/10 text-primary border-primary/20" },
+  Complete: { label: "Complete", className: "bg-success/10 text-success border-success/20" },
+  Escalated: { label: "Escalated", className: "bg-destructive/10 text-destructive border-destructive/20" },
+  Overdue: { label: "Overdue", className: "bg-destructive/10 text-destructive border-destructive/20" },
+};
+
+// ─── Remediation Workflow Tab component ──────────────────────────────────────────
+
+interface RemediationWorkflowTabProps {
+  supplier: Supplier;
+  plan: RemediationPlan | null;
+  role: Role;
+  isApprovalBlocked: boolean;
+  blockingMissing: Array<{ evidenceName: string }>;
+  remediationStore: ReturnType<typeof useRemediationStore>;
+}
+
+function RemediationWorkflowTab({
+  supplier,
+  plan,
+  role,
+  isApprovalBlocked: _isApprovalBlocked,
+  blockingMissing,
+  remediationStore,
+}: RemediationWorkflowTabProps) {
+  const actorName =
+    role === "procurement"
+      ? "Procurement Manager"
+      : role === "esg-analyst"
+      ? "ESG Analyst"
+      : supplier.name;
+
+  function handleEscalate() {
+    if (!plan) return;
+    remediationStore.escalatePlan(plan.id, actorName);
+    toast.warning("Remediation plan escalated", {
+      description: "Escalation flag applied. Senior ESG review required before this plan can progress.",
+    });
+  }
+
+  function handleSendToSupplier() {
+    if (!plan) return;
+    remediationStore.sendToSupplier(plan.id, actorName);
+    toast.success("Plan sent to supplier", {
+      description: `Remediation request sent to ${plan.supplierContact}.`,
+    });
+  }
+
+  function handleMarkSupplierResponded() {
+    if (!plan) return;
+    remediationStore.markSupplierResponded(plan.id);
+    toast.success("Supplier response recorded");
+  }
+
+  function handleMilestoneAction(milestoneId: string, newStatus: MilestoneStatus) {
+    if (!plan) return;
+    if (newStatus === "Complete") {
+      const check = canCompleteMilestone(plan, milestoneId);
+      if (!check.allowed) {
+        toast.error("Cannot complete milestone", { description: check.reason });
+        return;
+      }
+    }
+    remediationStore.updateMilestoneStatus(
+      plan.id,
+      milestoneId,
+      newStatus,
+      actorName,
+      role === "esg-analyst" ? "ESG Analyst" : "Procurement Manager"
+    );
+    toast.success(`Milestone updated to ${newStatus}`);
+  }
+
+  if (!plan) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Remediation Workflow</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">No active remediation plan for this supplier.</p>
+        </div>
+        <Card className="border-muted-foreground/20">
+          <CardContent className="py-8 text-center">
+            <ClipboardList className="size-8 text-muted-foreground/30 mx-auto mb-2" />
+            <p className="text-sm font-medium text-muted-foreground">No remediation plan assigned</p>
+          </CardContent>
+        </Card>
+        <Alert className="border-muted bg-muted/30 py-2.5">
+          <Info className="size-3.5 text-muted-foreground" />
+          <AlertDescription className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">AI boundary:</span> AI can summarize and draft. Deterministic rules govern blocked actions, status transitions, and approval eligibility.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  const planBlocked = isProcurementBlocked(plan);
+  const statusCfg = planStatusConfig[plan.status] ?? { label: plan.status, className: "bg-muted text-muted-foreground" };
+  const completedMilestones = plan.milestones.filter((m) => m.status === "Complete").length;
+  const totalMilestones = plan.milestones.length;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Remediation Workflow</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Track milestones, evidence submissions, and approval gates.</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {canSendToSupplier(plan) && role !== "supplier" && (
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8" onClick={handleSendToSupplier}>
+              <Send className="size-3" />
+              Send to Supplier
+            </Button>
+          )}
+          {canEscalatePlan(plan) && role === "esg-analyst" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 text-xs h-8 border-destructive/40 text-destructive hover:bg-destructive/10"
+              onClick={handleEscalate}
+            >
+              <AlertOctagon className="size-3" />
+              Escalate
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {planBlocked && (
+        <Alert className="border-destructive/30 bg-destructive/5">
+          <ShieldAlert className="size-4 text-destructive" />
+          <AlertTitle className="text-sm font-semibold text-destructive">Procurement approval is blocked</AlertTitle>
+          <AlertDescription className="text-xs text-muted-foreground">
+            Required milestones are incomplete.
+            {blockingMissing.length > 0 && ` Missing evidence: ${blockingMissing.map((e) => e.evidenceName).join(", ")}.`}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {plan.status === "Escalated" && (
+        <Alert className="border-destructive/30 bg-destructive/5">
+          <AlertOctagon className="size-4 text-destructive" />
+          <AlertTitle className="text-sm font-semibold text-destructive">Escalated — senior ESG review required</AlertTitle>
+          <AlertDescription className="text-xs text-muted-foreground">
+            This plan has been escalated. ESG / Compliance Analyst review is required before it can progress.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {plan.status === "Overdue" && (
+        <Alert className="border-destructive/30 bg-destructive/5">
+          <Clock className="size-4 text-destructive" />
+          <AlertTitle className="text-sm font-semibold text-destructive">Remediation overdue</AlertTitle>
+          <AlertDescription className="text-xs text-muted-foreground">
+            Past due date ({plan.dueDate}). Automatic escalation flag applied.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold">Plan Overview</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2.5 text-sm">
+            {[
+              { label: "Status", value: <Badge variant="outline" className={cn("text-xs", statusCfg.className)}>{statusCfg.label}</Badge> },
+              { label: "Severity", value: plan.severity },
+              { label: "Owner", value: plan.owner },
+              { label: "Supplier contact", value: plan.supplierContact },
+              { label: "Due date", value: plan.dueDate },
+              { label: "Progress", value: `${completedMilestones} / ${totalMilestones} milestones` },
+            ].map((row, i, arr) => (
+              <div key={row.label}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground shrink-0">{row.label}</span>
+                  <span className="font-medium text-foreground text-right text-xs">{row.value}</span>
+                </div>
+                {i < arr.length - 1 && <Separator className="mt-2.5" />}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold">Issue Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground leading-relaxed">{plan.issueSummary}</p>
+            {plan.requestedActions.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-foreground">Requested actions:</p>
+                <ul className="space-y-1">
+                  {plan.requestedActions.map((action, i) => (
+                    <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                      <span className="mt-1 size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+                      {action}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>Milestone progress</span>
+          <span>{completedMilestones}/{totalMilestones} complete</span>
+        </div>
+        <Progress
+          value={totalMilestones > 0 ? (completedMilestones / totalMilestones) * 100 : 0}
+          className={cn(
+            "h-1.5",
+            completedMilestones === totalMilestones
+              ? "[&>[data-slot=progress-indicator]]:bg-success"
+              : planBlocked
+              ? "[&>[data-slot=progress-indicator]]:bg-destructive"
+              : "[&>[data-slot=progress-indicator]]:bg-primary"
+          )}
+        />
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <ClipboardList className="size-4 text-muted-foreground" />
+            Milestones
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {plan.milestones.map((milestone) => {
+            const mStatus = milestoneStatusConfig[milestone.status];
+            const canComplete = canCompleteMilestone(plan, milestone.id);
+            const isAnalystOwned = milestone.owner === "ESG / Compliance Analyst";
+            const isSupplierOwned = milestone.owner === "Supplier User";
+
+            return (
+              <div
+                key={milestone.id}
+                className={cn(
+                  "rounded-md border px-4 py-3 space-y-2",
+                  milestone.blocksApproval && milestone.status !== "Complete"
+                    ? "border-destructive/30 bg-destructive/5"
+                    : "bg-card"
+                )}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="space-y-1 flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-foreground leading-tight">{milestone.title}</p>
+                      {milestone.blocksApproval && milestone.status !== "Complete" && (
+                        <Badge variant="outline" className="text-[10px] h-4 px-1 bg-destructive/10 text-destructive border-destructive/20 shrink-0">
+                          Blocks approval
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>Due {milestone.dueDate}</span>
+                      <span>·</span>
+                      <span>{milestone.owner}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge variant="outline" className={cn("text-xs", mStatus.className)}>
+                      {mStatus.label}
+                    </Badge>
+                    {isAnalystOwned && milestone.status === "Under Review" && role === "esg-analyst" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs gap-1 border-success/40 text-success hover:bg-success/10"
+                        onClick={() => handleMilestoneAction(milestone.id, "Complete")}
+                      >
+                        <CheckSquare className="size-3" />
+                        Approve
+                      </Button>
+                    )}
+                    {isSupplierOwned && milestone.status === "Submitted" && role !== "supplier" && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleMilestoneAction(milestone.id, "Under Review")}>
+                        Start Review
+                      </Button>
+                    )}
+                    {isSupplierOwned && milestone.status === "Not Started" && role !== "supplier" && (
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleMilestoneAction(milestone.id, "Requested")}>
+                        Request
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {!canComplete.allowed && milestone.status === "Under Review" && (
+                  <p className="text-xs text-muted-foreground italic">{canComplete.reason}</p>
+                )}
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      {(plan.status === "Sent to Supplier" || plan.status === "In Progress") && role !== "supplier" && (
+        <Alert className="border-primary/20 bg-primary/5">
+          <MessageSquare className="size-4 text-primary" />
+          <AlertDescription className="text-xs text-muted-foreground flex items-center justify-between gap-3">
+            <span>Awaiting supplier response.</span>
+            <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={handleMarkSupplierResponded}>
+              Mark Responded
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {plan.messages.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <MessageSquare className="size-4 text-muted-foreground" />
+              Messages
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {plan.messages.map((msg) => (
+              <div key={msg.id} className="space-y-1 border-l-2 border-border pl-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-foreground">{msg.author}</span>
+                  <span className="text-xs text-muted-foreground">·</span>
+                  <span className="text-xs text-muted-foreground">{msg.date}</span>
+                  <Badge variant="outline" className="text-[10px] h-4 px-1 bg-muted text-muted-foreground border-border">{msg.role}</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">{msg.body}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      <Alert className="border-muted bg-muted/30 py-2.5">
+        <Info className="size-3.5 text-muted-foreground" />
+        <AlertDescription className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">AI boundary:</span> AI can summarize and draft. Deterministic rules govern blocked actions, status transitions, and approval eligibility. A supplier-submitted item moves to Under Review — not automatically Complete.
+        </AlertDescription>
+      </Alert>
+    </div>
+  );
+}
+
 // ─── Role-aware context ─────────────────────────────────────────────────────────
 
 const roleActionLabels: Record<Role, string> = {
@@ -196,7 +569,7 @@ function generateAIBrief(supplier: ReturnType<typeof suppliers.find>): string {
 
 // ─── Main component ─────────────────────────────────────────────────────────────
 
-export function SupplierDetailPage({ supplierId, role, onBack }: SupplierDetailPageProps) {
+export function SupplierDetailPage({ supplierId, role, onBack, remediationStore }: SupplierDetailPageProps) {
   const supplier = suppliers.find((s) => s.id === supplierId);
 
   if (!supplier) {
@@ -213,7 +586,11 @@ export function SupplierDetailPage({ supplierId, role, onBack }: SupplierDetailP
 
   const evidenceList = getEvidenceForSupplier(supplierId);
   const complianceList = getComplianceMappingsForSupplier(supplierId);
-  const timeline = getTimelineForSupplier(supplierId);
+  const baseTimeline = getTimelineForSupplier(supplierId);
+  const extraTimeline = remediationStore.getExtraTimelineForSupplier(supplierId);
+  const timeline = [...extraTimeline, ...baseTimeline].sort((a, b) => b.date.localeCompare(a.date));
+
+  const remediationPlan = remediationStore.plans.find((p) => p.supplierId === supplierId) ?? null;
 
   const blockingMissing = evidenceList.filter(
     (e) => e.blocksApproval && (e.status === "Missing" || e.status === "Expired")
@@ -373,7 +750,7 @@ export function SupplierDetailPage({ supplierId, role, onBack }: SupplierDetailP
               overview: "Overview",
               evidence: "Evidence",
               compliance: "Compliance Mapping",
-              remediation: "Remediation Preview",
+              remediation: "Remediation Workflow",
               timeline: "Activity Timeline",
             };
             return (
@@ -753,116 +1130,16 @@ export function SupplierDetailPage({ supplierId, role, onBack }: SupplierDetailP
           </p>
         </TabsContent>
 
-        {/* ── Remediation Preview ──────────────────────────────────────────── */}
+        {/* ── Remediation Workflow ─────────────────────────────────────────── */}
         <TabsContent value="remediation" className="mt-6 space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Remediation Preview</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Current remediation status and next steps. Full workflow will be available in the next milestone.
-            </p>
-          </div>
-
-          {isApprovalBlocked && (
-            <Alert className="border-destructive/30 bg-destructive/5">
-              <ShieldAlert className="size-4 text-destructive" />
-              <AlertTitle className="text-sm font-semibold text-destructive">
-                Procurement approval is blocked
-              </AlertTitle>
-              <AlertDescription className="text-xs text-muted-foreground">
-                Procurement approval cannot proceed until required evidence is submitted and reviewed.
-                {blockingMissing.length > 0 && ` Missing: ${blockingMissing.map((e) => e.evidenceName).join(", ")}.`}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold">Current Status</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">Remediation status</span>
-                  <RemediationBadge status={supplier.remediationStatus} />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">Owner</span>
-                  <span className="text-sm font-medium text-foreground">{supplier.owner}</span>
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">Next review date</span>
-                  <span className="text-sm font-medium text-foreground">{supplier.nextReviewDate}</span>
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">Open findings</span>
-                  <span className="text-sm font-medium text-foreground">{supplier.openFindings}</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold">Main Open Issue</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {supplier.requiredActions.length > 0 ? (
-                  <>
-                    <div className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2.5">
-                      <p className="text-sm font-medium text-foreground">{supplier.requiredActions[0]}</p>
-                    </div>
-                    {supplier.requiredActions.slice(1).map((action, i) => (
-                      <p key={i} className="text-xs text-muted-foreground leading-relaxed border-l-2 border-border pl-3">
-                        {action}
-                      </p>
-                    ))}
-                  </>
-                ) : (
-                  <div className="flex items-center gap-2 text-sm text-success">
-                    <CheckCircle2 className="size-4" />
-                    No open issues.
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {supplier.riskDrivers.length > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold">Suggested Next Actions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
-                  {supplier.riskDrivers.slice(0, 2).map((driver, i) => (
-                    <li key={i} className="flex items-start gap-2.5 text-sm">
-                      <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold">
-                        {i + 1}
-                      </span>
-                      <span className="text-muted-foreground leading-snug">
-                        Address: <span className="text-foreground">{driver}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Workflow placeholder */}
-          <Card className="border-dashed border-muted-foreground/30">
-            <CardContent className="py-6">
-              <div className="flex flex-col items-center gap-2 text-center">
-                <ClipboardList className="size-8 text-muted-foreground/40" />
-                <p className="text-sm font-medium text-muted-foreground">Full remediation request workflow — next milestone</p>
-                <p className="text-xs text-muted-foreground max-w-md">
-                  The complete remediation workflow including evidence requests, approval chains, deadline tracking, escalation rules, and audit trail will be implemented in the next milestone.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <RemediationWorkflowTab
+            supplier={supplier}
+            plan={remediationPlan}
+            role={role}
+            isApprovalBlocked={isApprovalBlocked}
+            blockingMissing={blockingMissing}
+            remediationStore={remediationStore}
+          />
         </TabsContent>
 
         {/* ── Activity Timeline ────────────────────────────────────────────── */}
