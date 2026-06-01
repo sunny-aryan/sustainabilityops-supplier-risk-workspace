@@ -3,26 +3,60 @@ import {
   MapPin,
   Tag,
   Euro,
-  ShieldAlert,
-  FileCheck2,
-  ClipboardList,
   User,
   Calendar,
   AlertTriangle,
   CheckCircle2,
   Info,
+  ShieldAlert,
+  FileCheck2,
+  ClipboardList,
+  FileX,
+  Clock,
+  BrainCircuit,
+  GitCommitHorizontal as _GitCommitHorizontal,
+  FileSearch,
+  Cpu,
+  Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { RiskBadge } from "@/components/shared/risk-badge";
 import { RemediationBadge } from "@/components/shared/remediation-badge";
 import { suppliers } from "@/data/suppliers";
-import type { Role } from "@/types";
+import { getEvidenceForSupplier } from "@/data/evidence";
+import { getComplianceMappingsForSupplier } from "@/data/complianceMappings";
+import { getTimelineForSupplier } from "@/data/activityTimeline";
+import type {
+  Role,
+  EvidenceItemStatus,
+  ComplianceReadiness,
+  ComplianceApplicability,
+  TimelineEventSource,
+  TimelineEventType,
+} from "@/types";
 import { cn } from "@/lib/utils";
+
+// ─── Prop types ────────────────────────────────────────────────────────────────
 
 interface SupplierDetailPageProps {
   supplierId: string;
@@ -30,11 +64,137 @@ interface SupplierDetailPageProps {
   onBack: () => void;
 }
 
+// ─── Status badge helpers ───────────────────────────────────────────────────────
+
+const evidenceStatusConfig: Record<
+  EvidenceItemStatus,
+  { label: string; className: string }
+> = {
+  Complete: { label: "Complete", className: "bg-success/10 text-success border-success/20" },
+  Missing: { label: "Missing", className: "bg-destructive/10 text-destructive border-destructive/20" },
+  Expired: { label: "Expired", className: "bg-destructive/10 text-destructive border-destructive/20" },
+  "Under Review": { label: "Under Review", className: "bg-primary/10 text-primary border-primary/20" },
+  Requested: { label: "Requested", className: "bg-warning/10 text-warning border-warning/20" },
+};
+
+const readinessConfig: Record<
+  ComplianceReadiness,
+  { label: string; className: string }
+> = {
+  Ready: { label: "Ready", className: "bg-success/10 text-success border-success/20" },
+  "Evidence Gap": { label: "Evidence Gap", className: "bg-warning/10 text-warning border-warning/20" },
+  "Review Required": { label: "Review Required", className: "bg-primary/10 text-primary border-primary/20" },
+  Blocked: { label: "Blocked", className: "bg-destructive/10 text-destructive border-destructive/20" },
+};
+
+const applicabilityConfig: Record<
+  ComplianceApplicability,
+  { label: string; className: string }
+> = {
+  Applicable: { label: "Applicable", className: "bg-foreground/10 text-foreground border-border" },
+  "Possibly Applicable": { label: "Possibly Applicable", className: "bg-muted text-muted-foreground border-border" },
+  "Not Applicable": { label: "Not Applicable", className: "bg-muted/50 text-muted-foreground/60 border-border/50" },
+};
+
+const timelineSourceConfig: Record<
+  TimelineEventSource,
+  { label: string; className: string }
+> = {
+  System: { label: "System", className: "bg-muted text-muted-foreground" },
+  "ESG Analyst": { label: "ESG Analyst", className: "bg-primary/10 text-primary" },
+  "Procurement Manager": { label: "Procurement", className: "bg-warning/10 text-warning" },
+  "Supplier User": { label: "Supplier", className: "bg-success/10 text-success" },
+  "AI Draft": { label: "AI Draft", className: "bg-muted text-muted-foreground border border-border" },
+};
+
+const timelineEventIcons: Record<TimelineEventType, React.ElementType> = {
+  evidence_requested: FileSearch,
+  evidence_submitted: FileCheck2,
+  risk_recalculated: ShieldAlert,
+  remediation_overdue: Clock,
+  finding_flagged: AlertTriangle,
+  approval_blocked: ShieldAlert,
+  ai_draft_generated: BrainCircuit,
+  review_completed: CheckCircle2,
+  supplier_onboarded: Building2,
+  policy_triggered: ShieldAlert,
+};
+
+const timelineEventIconColors: Record<TimelineEventType, string> = {
+  evidence_requested: "text-primary",
+  evidence_submitted: "text-success",
+  risk_recalculated: "text-warning",
+  remediation_overdue: "text-destructive",
+  finding_flagged: "text-destructive",
+  approval_blocked: "text-destructive",
+  ai_draft_generated: "text-muted-foreground",
+  review_completed: "text-success",
+  supplier_onboarded: "text-primary",
+  policy_triggered: "text-destructive",
+};
+
+// ─── Role-aware context ─────────────────────────────────────────────────────────
+
 const roleActionLabels: Record<Role, string> = {
   procurement: "Sourcing risk review and supplier prioritisation",
   "esg-analyst": "Evidence gap review and compliance assessment",
   supplier: "Evidence submission and remediation milestones",
 };
+
+// ─── AI Brief generator (static/deterministic from supplier attributes) ─────────
+
+function generateAIBrief(supplier: ReturnType<typeof suppliers.find>): string {
+  if (!supplier) return "";
+
+  const riskLabel =
+    supplier.riskLevel === "critical"
+      ? "critical risk"
+      : supplier.riskLevel === "high"
+      ? "high risk"
+      : supplier.riskLevel === "medium"
+      ? "medium risk"
+      : "low risk";
+
+  const evidenceNote =
+    supplier.evidenceCompleteness < 50
+      ? `Evidence completeness is critically low at ${supplier.evidenceCompleteness}%, with key approval-blocking documentation missing.`
+      : supplier.evidenceCompleteness < 75
+      ? `Evidence completeness stands at ${supplier.evidenceCompleteness}%, with several documents pending or under review.`
+      : `Evidence completeness is ${supplier.evidenceCompleteness}%, indicating a largely complete documentation set.`;
+
+  const remediationNote =
+    supplier.remediationStatus === "overdue"
+      ? "The active remediation plan is overdue and has been flagged for escalation."
+      : supplier.remediationStatus === "escalated"
+      ? "The remediation status has been escalated for senior review."
+      : supplier.remediationStatus === "in-progress"
+      ? "A remediation plan is in progress."
+      : supplier.remediationStatus === "complete"
+      ? "All remediation actions have been completed."
+      : "No remediation plan has been initiated.";
+
+  const regulatoryNote =
+    supplier.regulatoryExposure.length > 0
+      ? `This supplier is in scope for: ${supplier.regulatoryExposure.join(", ")}.`
+      : "No specific regulatory frameworks identified.";
+
+  const riskDriverNote =
+    supplier.riskDrivers.length > 0
+      ? `Primary risk factors include: ${supplier.riskDrivers.slice(0, 2).join("; ")}.`
+      : "No active risk drivers identified at this time.";
+
+  return (
+    `${supplier.name} is a ${supplier.criticality.toLowerCase()}-criticality ${supplier.category.toLowerCase()} supplier based in ${supplier.country} (${supplier.region}), ` +
+    `with annual spend of approximately €${(supplier.annualSpendEur / 1_000_000).toFixed(1)}M. ` +
+    `The supplier currently carries a ${riskLabel} rating with a risk score of ${supplier.riskScore}/100. ` +
+    `${evidenceNote} ` +
+    `${remediationNote} ` +
+    `${regulatoryNote} ` +
+    `${riskDriverNote}`
+  );
+}
+
+// ─── Main component ─────────────────────────────────────────────────────────────
 
 export function SupplierDetailPage({ supplierId, role, onBack }: SupplierDetailPageProps) {
   const supplier = suppliers.find((s) => s.id === supplierId);
@@ -51,12 +211,17 @@ export function SupplierDetailPage({ supplierId, role, onBack }: SupplierDetailP
     );
   }
 
-  const evidenceColor =
-    supplier.evidenceCompleteness >= 75
-      ? "[&>[data-slot=progress-indicator]]:bg-success"
-      : supplier.evidenceCompleteness >= 50
-      ? "[&>[data-slot=progress-indicator]]:bg-warning"
-      : "[&>[data-slot=progress-indicator]]:bg-destructive";
+  const evidenceList = getEvidenceForSupplier(supplierId);
+  const complianceList = getComplianceMappingsForSupplier(supplierId);
+  const timeline = getTimelineForSupplier(supplierId);
+
+  const blockingMissing = evidenceList.filter(
+    (e) => e.blocksApproval && (e.status === "Missing" || e.status === "Expired")
+  );
+  const isApprovalBlocked =
+    blockingMissing.length > 0 ||
+    supplier.remediationStatus === "overdue" ||
+    supplier.remediationStatus === "escalated";
 
   const spendFormatted = new Intl.NumberFormat("en-EU", {
     style: "currency",
@@ -65,234 +230,694 @@ export function SupplierDetailPage({ supplierId, role, onBack }: SupplierDetailP
     maximumFractionDigits: 1,
   }).format(supplier.annualSpendEur);
 
+  const evidenceColor =
+    supplier.evidenceCompleteness >= 75
+      ? "[&>[data-slot=progress-indicator]]:bg-success"
+      : supplier.evidenceCompleteness >= 50
+      ? "[&>[data-slot=progress-indicator]]:bg-warning"
+      : "[&>[data-slot=progress-indicator]]:bg-destructive";
+
+  const aiBrief = generateAIBrief(supplier);
+
   return (
     <div className="space-y-6">
-      {/* Back navigation */}
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" className="gap-2 -ml-2" onClick={onBack}>
-          <ArrowLeft className="size-4" />
-          Back to Suppliers
-        </Button>
-      </div>
+      {/* Back nav */}
+      <Button variant="ghost" size="sm" className="gap-2 -ml-2" onClick={onBack}>
+        <ArrowLeft className="size-4" />
+        Back to Suppliers
+      </Button>
 
       {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            {supplier.name}
-          </h1>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <MapPin className="size-3.5" />
-              {supplier.country}, {supplier.region}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Tag className="size-3.5" />
-              {supplier.category}
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Euro className="size-3.5" />
-              {spendFormatted} annual spend
-            </span>
+      <div className="flex flex-col gap-4 border-b pb-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                {supplier.name}
+              </h1>
+              <Badge variant="outline" className="text-xs text-muted-foreground bg-muted border-border">
+                {supplier.id}
+              </Badge>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <MapPin className="size-3.5" />
+                {supplier.country}, {supplier.region}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Tag className="size-3.5" />
+                {supplier.category}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Euro className="size-3.5" />
+                {spendFormatted} annual spend
+              </span>
+              <span className="flex items-center gap-1.5">
+                <User className="size-3.5" />
+                {supplier.owner}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Calendar className="size-3.5" />
+                Review: {supplier.nextReviewDate}
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <RiskBadge level={supplier.riskLevel} score={supplier.riskScore} />
+            <RemediationBadge status={supplier.remediationStatus} />
+            <Badge variant="outline" className="bg-muted text-muted-foreground border-border">
+              {supplier.criticality} criticality
+            </Badge>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <RiskBadge level={supplier.riskLevel} score={supplier.riskScore} />
-          <RemediationBadge status={supplier.remediationStatus} />
-          <Badge
-            variant="outline"
-            className="bg-muted text-muted-foreground border-border"
-          >
-            {supplier.criticality} criticality
-          </Badge>
-        </div>
+
+        {/* Approval blocked callout */}
+        {isApprovalBlocked && (
+          <Alert className="border-destructive/30 bg-destructive/5">
+            <ShieldAlert className="size-4 text-destructive" />
+            <AlertTitle className="text-sm font-semibold text-destructive">
+              Procurement approval is blocked
+            </AlertTitle>
+            <AlertDescription className="text-xs text-muted-foreground">
+              {blockingMissing.length > 0
+                ? `Required evidence is missing or expired: ${blockingMissing.map((e) => e.evidenceName).join(", ")}. `
+                : ""}
+              {(supplier.remediationStatus === "overdue" || supplier.remediationStatus === "escalated")
+                ? "Remediation plan is overdue or escalated. "
+                : ""}
+              Procurement approval cannot proceed until all required evidence is submitted and reviewed.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Role-aware context */}
+        <Alert className="border-primary/20 bg-primary/5">
+          <Info className="size-4 text-primary" />
+          <AlertDescription className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{roleActionLabels[role]}:</span>{" "}
+            {supplier.requiredActions.length > 0
+              ? supplier.requiredActions[0]
+              : "No immediate actions pending for this supplier."}
+          </AlertDescription>
+        </Alert>
       </div>
 
-      {/* Role-aware context */}
-      <Alert className="border-primary/20 bg-primary/5">
-        <Info className="size-4 text-primary" />
-        <AlertDescription className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{roleActionLabels[role]}:</span>{" "}
-          {supplier.requiredActions.length > 0
-            ? supplier.requiredActions[0]
-            : "No immediate actions pending for this supplier."}
-        </AlertDescription>
-      </Alert>
-
-      {/* Core metrics row */}
+      {/* KPI cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Card>
           <CardContent className="pt-4">
-            <div className="flex items-center gap-2 text-muted-foreground mb-1">
+            <div className="flex items-center gap-2 text-muted-foreground mb-1.5">
               <ShieldAlert className="size-3.5" />
               <span className="text-xs font-medium">Risk Score</span>
             </div>
-            <p className="text-2xl font-bold text-foreground">{supplier.riskScore}</p>
-            <RiskBadge level={supplier.riskLevel} className="mt-1.5 text-[10px] h-5" />
+            <p className="text-3xl font-bold text-foreground">{supplier.riskScore}</p>
+            <RiskBadge level={supplier.riskLevel} className="mt-2 text-[10px] h-5" />
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="flex items-center gap-2 text-muted-foreground mb-1">
+            <div className="flex items-center gap-2 text-muted-foreground mb-1.5">
               <FileCheck2 className="size-3.5" />
               <span className="text-xs font-medium">Evidence</span>
             </div>
-            <p className="text-2xl font-bold text-foreground">{supplier.evidenceCompleteness}%</p>
+            <p className="text-3xl font-bold text-foreground">{supplier.evidenceCompleteness}%</p>
             <Progress value={supplier.evidenceCompleteness} className={cn("h-1.5 mt-2", evidenceColor)} />
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="flex items-center gap-2 text-muted-foreground mb-1">
+            <div className="flex items-center gap-2 text-muted-foreground mb-1.5">
               <AlertTriangle className="size-3.5" />
               <span className="text-xs font-medium">Open Findings</span>
             </div>
-            <p className="text-2xl font-bold text-foreground">{supplier.openFindings}</p>
+            <p className="text-3xl font-bold text-foreground">{supplier.openFindings}</p>
             <p className="text-xs text-muted-foreground mt-1">unresolved items</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="flex items-center gap-2 text-muted-foreground mb-1">
+            <div className="flex items-center gap-2 text-muted-foreground mb-1.5">
               <ClipboardList className="size-3.5" />
               <span className="text-xs font-medium">Remediation</span>
             </div>
-            <RemediationBadge status={supplier.remediationStatus} className="mt-1" />
+            <RemediationBadge status={supplier.remediationStatus} className="mt-1.5" />
           </CardContent>
         </Card>
       </div>
 
-      {/* Main content grid */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* Risk drivers */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <ShieldAlert className="size-4 text-destructive" />
-              Risk Drivers
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {supplier.riskDrivers.length === 0 ? (
-              <div className="flex items-center gap-2 text-sm text-success">
-                <CheckCircle2 className="size-4" />
-                No active risk drivers identified.
-              </div>
-            ) : (
-              <ul className="space-y-2">
-                {supplier.riskDrivers.slice(0, 3).map((driver, i) => (
-                  <li key={i} className="flex items-start gap-2.5 text-sm">
-                    <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive text-[10px] font-bold">
-                      {i + 1}
-                    </span>
-                    <span className="text-foreground leading-snug">{driver}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+      {/* Tabs */}
+      <Tabs defaultValue="overview">
+        <TabsList className="w-full justify-start border-b rounded-none h-auto p-0 bg-transparent gap-0">
+          {(["overview", "evidence", "compliance", "remediation", "timeline"] as const).map((tab) => {
+            const labels: Record<string, string> = {
+              overview: "Overview",
+              evidence: "Evidence",
+              compliance: "Compliance Mapping",
+              remediation: "Remediation Preview",
+              timeline: "Activity Timeline",
+            };
+            return (
+              <TabsTrigger
+                key={tab}
+                value={tab}
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-sm font-medium text-muted-foreground data-[state=active]:text-foreground"
+              >
+                {labels[tab]}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
 
-        {/* Required actions */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <ClipboardList className="size-4 text-warning" />
-              Required Actions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {supplier.requiredActions.length === 0 ? (
-              <div className="flex items-center gap-2 text-sm text-success">
-                <CheckCircle2 className="size-4" />
-                No pending actions for this supplier.
-              </div>
-            ) : (
-              <ul className="space-y-2">
-                {supplier.requiredActions.map((action, i) => (
-                  <li key={i} className="flex items-start gap-2.5 text-sm">
-                    <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-warning/10 text-warning text-[10px] font-bold">
-                      {i + 1}
-                    </span>
-                    <span className="text-foreground leading-snug">{action}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+        {/* ── Overview ────────────────────────────────────────────────────── */}
+        <TabsContent value="overview" className="mt-6 space-y-5">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {/* Risk Drivers */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <ShieldAlert className="size-4 text-destructive" />
+                  Risk Drivers
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {supplier.riskDrivers.length === 0 ? (
+                  <div className="flex items-center gap-2 text-sm text-success">
+                    <CheckCircle2 className="size-4" />
+                    No active risk drivers identified.
+                  </div>
+                ) : (
+                  <ul className="space-y-2.5">
+                    {supplier.riskDrivers.map((driver, i) => (
+                      <li key={i} className="flex items-start gap-3 text-sm">
+                        <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive text-[10px] font-bold">
+                          {i + 1}
+                        </span>
+                        <span className="text-foreground leading-snug">{driver}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
 
-        {/* Regulatory exposure */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold">Regulatory Exposure</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {supplier.regulatoryExposure.map((reg) => (
-                <Badge
-                  key={reg}
-                  variant="outline"
-                  className="bg-muted text-muted-foreground border-border"
-                >
-                  {reg}
+            {/* Required Actions */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <ClipboardList className="size-4 text-warning" />
+                  Required Actions
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {supplier.requiredActions.length === 0 ? (
+                  <div className="flex items-center gap-2 text-sm text-success">
+                    <CheckCircle2 className="size-4" />
+                    No pending actions.
+                  </div>
+                ) : (
+                  <ul className="space-y-2.5">
+                    {supplier.requiredActions.map((action, i) => (
+                      <li key={i} className="flex items-start gap-3 text-sm">
+                        <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-warning/10 text-warning text-[10px] font-bold">
+                          {i + 1}
+                        </span>
+                        <span className="text-foreground leading-snug">{action}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Regulatory exposure */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold">Regulatory Exposure</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {supplier.regulatoryExposure.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No frameworks identified.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {supplier.regulatoryExposure.map((reg) => (
+                      <Badge key={reg} variant="outline" className="bg-muted text-muted-foreground border-border">
+                        {reg}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Supplier details */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold">Supplier Details</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <dl className="space-y-2.5 text-sm">
+                  {[
+                    { label: "Owner", value: supplier.owner, icon: <User className="size-3.5" /> },
+                    { label: "Next Review", value: supplier.nextReviewDate, icon: <Calendar className="size-3.5" /> },
+                    { label: "Last Updated", value: supplier.lastUpdated },
+                    { label: "Annual Spend", value: spendFormatted },
+                    { label: "Criticality", value: supplier.criticality },
+                    { label: "Supplier ID", value: supplier.id },
+                  ].map((row, i, arr) => (
+                    <div key={row.label}>
+                      <div className="flex items-center justify-between">
+                        <dt className="flex items-center gap-1.5 text-muted-foreground">
+                          {row.icon}
+                          {row.label}
+                        </dt>
+                        <dd className="font-medium text-foreground">{row.value}</dd>
+                      </div>
+                      {i < arr.length - 1 && <Separator className="mt-2.5" />}
+                    </div>
+                  ))}
+                </dl>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Deterministic policy callout */}
+          <Card className="border-muted-foreground/20">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Cpu className="size-4 text-muted-foreground" />
+                Deterministic Policy Rules Applied
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-1.5">
+                {[
+                  `Risk score ${supplier.riskScore} → ${supplier.riskLevel.charAt(0).toUpperCase() + supplier.riskLevel.slice(1)} risk (threshold: ≥90 Critical, ≥75 High, ≥45 Medium)`,
+                  supplier.evidenceCompleteness < 60 && supplier.criticality === "High"
+                    ? `Evidence ${supplier.evidenceCompleteness}% + High criticality → Review Required flag triggered`
+                    : null,
+                  blockingMissing.length > 0
+                    ? `Missing approval-blocking evidence (${blockingMissing.length} item${blockingMissing.length > 1 ? "s" : ""}) → Procurement hold active`
+                    : null,
+                  supplier.remediationStatus === "overdue"
+                    ? "Remediation overdue >30 days → Auto-escalated to Action Queue"
+                    : null,
+                  supplier.remediationStatus === "escalated"
+                    ? "Escalated status → Priority review flag applied"
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .map((rule, i) => (
+                    <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                      <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+                      {rule}
+                    </li>
+                  ))}
+                {[
+                  `Risk score ${supplier.riskScore} → ${supplier.riskLevel} risk`,
+                  blockingMissing.length === 0 && supplier.remediationStatus !== "overdue" && supplier.remediationStatus !== "escalated"
+                    ? "No blocking policy rules active for this supplier"
+                    : null,
+                ]
+                  .filter(
+                    () =>
+                      [
+                        supplier.evidenceCompleteness < 60 && supplier.criticality === "High",
+                        blockingMissing.length > 0,
+                        supplier.remediationStatus === "overdue",
+                        supplier.remediationStatus === "escalated",
+                      ].every((x) => !x)
+                  )
+                  .filter(Boolean)
+                  .slice(0, 1)
+                  .map((rule, i) => (
+                    <li key={`default-${i}`} className="flex items-start gap-2 text-xs text-muted-foreground">
+                      <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+                      {rule}
+                    </li>
+                  ))}
+              </ul>
+            </CardContent>
+          </Card>
+
+          {/* AI brief */}
+          <Card className="border-primary/20">
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <BrainCircuit className="size-4 text-primary" />
+                    AI-generated draft brief
+                  </CardTitle>
+                  <CardDescription className="text-xs mt-1">
+                    Generated from supplier attributes · Not reviewed · Draft only
+                  </CardDescription>
+                </div>
+                <Badge variant="outline" className="text-[10px] shrink-0 bg-muted text-muted-foreground border-border">
+                  Draft
                 </Badge>
-              ))}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground leading-relaxed">{aiBrief}</p>
+              <Alert className="border-muted bg-muted/30 py-2.5">
+                <Info className="size-3.5 text-muted-foreground" />
+                <AlertDescription className="text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">AI boundary:</span> This brief summarizes supplier context from structured data. Deterministic rules govern risk level, blocked actions, and approval eligibility. Human reviewers have final authority on all compliance decisions.
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Evidence ─────────────────────────────────────────────────────── */}
+        <TabsContent value="evidence" className="mt-6 space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Evidence Records</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Evidence completeness determines supplier approval eligibility. Missing approval-blocking evidence triggers a procurement hold regardless of risk score.
+              </p>
             </div>
-          </CardContent>
-        </Card>
+            <Button variant="outline" size="sm" disabled className="shrink-0 opacity-50 gap-2 text-xs">
+              Request Evidence
+            </Button>
+          </div>
 
-        {/* Supplier details */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold">Supplier Details</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <dl className="space-y-2.5 text-sm">
-              <div className="flex items-center justify-between">
-                <dt className="flex items-center gap-1.5 text-muted-foreground">
-                  <User className="size-3.5" />
-                  Owner
-                </dt>
-                <dd className="font-medium text-foreground">{supplier.owner}</dd>
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <dt className="flex items-center gap-1.5 text-muted-foreground">
-                  <Calendar className="size-3.5" />
-                  Next Review
-                </dt>
-                <dd className="font-medium text-foreground">{supplier.nextReviewDate}</dd>
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <dt className="text-muted-foreground">Last Updated</dt>
-                <dd className="font-medium text-foreground">{supplier.lastUpdated}</dd>
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <dt className="text-muted-foreground">Annual Spend</dt>
-                <dd className="font-medium text-foreground">{spendFormatted}</dd>
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <dt className="text-muted-foreground">Criticality</dt>
-                <dd className="font-medium text-foreground">{supplier.criticality}</dd>
-              </div>
-            </dl>
-          </CardContent>
-        </Card>
-      </div>
+          {blockingMissing.length > 0 && (
+            <Alert className="border-destructive/30 bg-destructive/5">
+              <FileX className="size-4 text-destructive" />
+              <AlertTitle className="text-sm font-semibold text-destructive">
+                Approval-blocking evidence missing
+              </AlertTitle>
+              <AlertDescription className="text-xs text-muted-foreground">
+                {blockingMissing.map((e) => e.evidenceName).join(", ")} — procurement approval is on hold until these items are submitted and reviewed.
+              </AlertDescription>
+            </Alert>
+          )}
 
-      {/* Future capabilities placeholder */}
-      <Card className="border-dashed border-muted-foreground/30">
-        <CardContent className="py-6 text-center">
-          <p className="text-sm font-medium text-muted-foreground">Coming in the next milestone</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Detailed evidence review, compliance mapping, remediation workflow, and activity timeline will be added in the next milestones.
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Evidence Item</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Due Date</TableHead>
+                    <TableHead>Blocks Approval</TableHead>
+                    <TableHead>Notes</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {evidenceList.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                        No evidence records for this supplier.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    evidenceList.map((item) => {
+                      const statusCfg = evidenceStatusConfig[item.status];
+                      return (
+                        <TableRow key={item.id} className={cn(
+                          item.blocksApproval && (item.status === "Missing" || item.status === "Expired")
+                            ? "bg-destructive/5"
+                            : ""
+                        )}>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium text-foreground text-sm leading-tight">{item.evidenceName}</p>
+                              <p className="text-xs text-muted-foreground">{item.owner}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{item.category}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={cn("text-xs", statusCfg.className)}>
+                              {statusCfg.label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{item.sourceType}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{item.dueDate}</TableCell>
+                          <TableCell>
+                            {item.blocksApproval ? (
+                              <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">
+                                Yes
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground/60">No</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground max-w-[200px] leading-relaxed">{item.notes}</TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+              <div className="border-t px-4 py-2.5">
+                <p className="text-xs text-muted-foreground">
+                  {evidenceList.filter((e) => e.status === "Complete").length} complete · {evidenceList.filter((e) => e.status === "Missing" || e.status === "Expired").length} missing/expired · {evidenceList.filter((e) => e.status === "Under Review" || e.status === "Requested").length} in progress
+                  {" · "}Evidence upload available in the next milestone.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Compliance Mapping ───────────────────────────────────────────── */}
+        <TabsContent value="compliance" className="mt-6 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Compliance Framework Mapping</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Readiness is determined by evidence completeness and supplier attributes. This is a demo readiness model — not legal advice.
+            </p>
+          </div>
+
+          <Alert className="border-muted bg-muted/30 py-2.5">
+            <Info className="size-3.5 text-muted-foreground" />
+            <AlertDescription className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Deterministic readiness model:</span> Compliance readiness is calculated from supplier attributes, regulatory exposure flags, and evidence status — not AI judgment. Applicability is assessed against sector, commodity, and geography rules defined by the compliance team.
+            </AlertDescription>
+          </Alert>
+
+          <div className="grid grid-cols-1 gap-3">
+            {complianceList.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No compliance mappings for this supplier.</p>
+            ) : (
+              complianceList.map((mapping) => {
+                const readinessCfg = readinessConfig[mapping.readiness];
+                const applicCfg = applicabilityConfig[mapping.applicability];
+                return (
+                  <Card key={mapping.id} className={cn(
+                    mapping.readiness === "Blocked" ? "border-destructive/30" :
+                    mapping.readiness === "Evidence Gap" ? "border-warning/30" : ""
+                  )}>
+                    <CardContent className="py-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-1.5 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-sm text-foreground">{mapping.framework}</span>
+                            <Badge variant="outline" className={cn("text-xs", applicCfg.className)}>
+                              {applicCfg.label}
+                            </Badge>
+                            <Badge variant="outline" className={cn("text-xs", readinessCfg.className)}>
+                              {readinessCfg.label}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-relaxed">{mapping.reason}</p>
+                          {mapping.requiredEvidence.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                              <span className="text-xs text-muted-foreground">Required:</span>
+                              {mapping.requiredEvidence.map((ev) => (
+                                <Badge key={ev} variant="outline" className="text-[10px] h-4 px-1.5 bg-muted text-muted-foreground border-border">
+                                  {ev}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                          Assessed {mapping.lastAssessed}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+
+          <p className="text-xs text-muted-foreground border-t pt-3">
+            This demo readiness model is based on deterministic rules applied to supplier attributes and evidence status. It does not constitute legal advice and should be verified with qualified legal counsel before regulatory submission.
           </p>
-        </CardContent>
-      </Card>
+        </TabsContent>
+
+        {/* ── Remediation Preview ──────────────────────────────────────────── */}
+        <TabsContent value="remediation" className="mt-6 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Remediation Preview</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Current remediation status and next steps. Full workflow will be available in the next milestone.
+            </p>
+          </div>
+
+          {isApprovalBlocked && (
+            <Alert className="border-destructive/30 bg-destructive/5">
+              <ShieldAlert className="size-4 text-destructive" />
+              <AlertTitle className="text-sm font-semibold text-destructive">
+                Procurement approval is blocked
+              </AlertTitle>
+              <AlertDescription className="text-xs text-muted-foreground">
+                Procurement approval cannot proceed until required evidence is submitted and reviewed.
+                {blockingMissing.length > 0 && ` Missing: ${blockingMissing.map((e) => e.evidenceName).join(", ")}.`}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold">Current Status</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Remediation status</span>
+                  <RemediationBadge status={supplier.remediationStatus} />
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Owner</span>
+                  <span className="text-sm font-medium text-foreground">{supplier.owner}</span>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Next review date</span>
+                  <span className="text-sm font-medium text-foreground">{supplier.nextReviewDate}</span>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Open findings</span>
+                  <span className="text-sm font-medium text-foreground">{supplier.openFindings}</span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold">Main Open Issue</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {supplier.requiredActions.length > 0 ? (
+                  <>
+                    <div className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2.5">
+                      <p className="text-sm font-medium text-foreground">{supplier.requiredActions[0]}</p>
+                    </div>
+                    {supplier.requiredActions.slice(1).map((action, i) => (
+                      <p key={i} className="text-xs text-muted-foreground leading-relaxed border-l-2 border-border pl-3">
+                        {action}
+                      </p>
+                    ))}
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-success">
+                    <CheckCircle2 className="size-4" />
+                    No open issues.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {supplier.riskDrivers.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold">Suggested Next Actions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  {supplier.riskDrivers.slice(0, 2).map((driver, i) => (
+                    <li key={i} className="flex items-start gap-2.5 text-sm">
+                      <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold">
+                        {i + 1}
+                      </span>
+                      <span className="text-muted-foreground leading-snug">
+                        Address: <span className="text-foreground">{driver}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Workflow placeholder */}
+          <Card className="border-dashed border-muted-foreground/30">
+            <CardContent className="py-6">
+              <div className="flex flex-col items-center gap-2 text-center">
+                <ClipboardList className="size-8 text-muted-foreground/40" />
+                <p className="text-sm font-medium text-muted-foreground">Full remediation request workflow — next milestone</p>
+                <p className="text-xs text-muted-foreground max-w-md">
+                  The complete remediation workflow including evidence requests, approval chains, deadline tracking, escalation rules, and audit trail will be implemented in the next milestone.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── Activity Timeline ────────────────────────────────────────────── */}
+        <TabsContent value="timeline" className="mt-6 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Activity Timeline</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              All system-generated and human-entered events for this supplier. System events are deterministic and rule-based.
+            </p>
+          </div>
+
+          {timeline.length === 0 ? (
+            <Card>
+              <CardContent className="py-10 text-center">
+                <p className="text-sm text-muted-foreground">No activity recorded for this supplier.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="relative">
+              <div className="absolute left-[18px] top-0 bottom-0 w-px bg-border" />
+              <div className="space-y-0">
+                {timeline.map((event, i) => {
+                  const Icon = timelineEventIcons[event.eventType];
+                  const iconColor = timelineEventIconColors[event.eventType];
+                  const sourceCfg = timelineSourceConfig[event.source];
+                  return (
+                    <div key={event.id} className={cn("relative flex gap-4 pb-6", i === timeline.length - 1 && "pb-0")}>
+                      <div className={cn("relative z-10 flex size-9 shrink-0 items-center justify-center rounded-full border bg-card", iconColor)}>
+                        <Icon className="size-3.5" />
+                      </div>
+                      <div className="flex-1 pt-1 pb-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className={cn("text-[10px] rounded-sm px-1.5 py-0.5 font-medium", sourceCfg.className)}>
+                            {sourceCfg.label}
+                          </span>
+                          <span className="text-xs text-muted-foreground">{event.date}</span>
+                          {event.source !== "System" && event.source !== "AI Draft" && (
+                            <span className="text-xs text-muted-foreground">· {event.actor}</span>
+                          )}
+                          {event.systemGenerated && (
+                            <Badge variant="outline" className="text-[10px] h-4 px-1 bg-muted/50 text-muted-foreground/70 border-border/50">
+                              Auto
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-foreground leading-snug">{event.description}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

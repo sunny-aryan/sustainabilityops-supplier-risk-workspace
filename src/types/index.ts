@@ -20,6 +20,89 @@ export type RemediationStatus =
 export type Criticality = "High" | "Medium" | "Low";
 export type EvidenceCompletionBucket = "below60" | "60to84" | "above85";
 
+// Evidence types
+export type EvidenceItemStatus =
+  | "Complete"
+  | "Missing"
+  | "Expired"
+  | "Under Review"
+  | "Requested";
+
+export type EvidenceSourceType =
+  | "Supplier Upload"
+  | "Third-party Audit"
+  | "Internal Review"
+  | "Declaration";
+
+export interface EvidenceItem {
+  id: string;
+  supplierId: string;
+  evidenceName: string;
+  category: string;
+  status: EvidenceItemStatus;
+  owner: string;
+  lastUpdated: string;
+  dueDate: string;
+  sourceType: EvidenceSourceType;
+  blocksApproval: boolean;
+  notes: string;
+}
+
+// Compliance mapping types
+export type ComplianceApplicability =
+  | "Applicable"
+  | "Possibly Applicable"
+  | "Not Applicable";
+
+export type ComplianceReadiness =
+  | "Ready"
+  | "Evidence Gap"
+  | "Review Required"
+  | "Blocked";
+
+export interface ComplianceMapping {
+  id: string;
+  supplierId: string;
+  framework: string;
+  applicability: ComplianceApplicability;
+  readiness: ComplianceReadiness;
+  requiredEvidence: string[];
+  reason: string;
+  lastAssessed: string;
+}
+
+// Activity timeline types
+export type TimelineEventType =
+  | "evidence_requested"
+  | "evidence_submitted"
+  | "risk_recalculated"
+  | "remediation_overdue"
+  | "finding_flagged"
+  | "approval_blocked"
+  | "ai_draft_generated"
+  | "review_completed"
+  | "supplier_onboarded"
+  | "policy_triggered";
+
+export type TimelineEventSource =
+  | "System"
+  | "ESG Analyst"
+  | "Procurement Manager"
+  | "Supplier User"
+  | "AI Draft";
+
+export interface TimelineEvent {
+  id: string;
+  supplierId: string;
+  date: string;
+  actor: string;
+  eventType: TimelineEventType;
+  description: string;
+  source: TimelineEventSource;
+  systemGenerated: boolean;
+}
+
+// Supplier interface
 export interface Supplier {
   id: string;
   name: string;
