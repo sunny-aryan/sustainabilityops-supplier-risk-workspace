@@ -138,7 +138,7 @@ The Methodology & Trust Center explains how the system separates AI assistance f
 
 ---
 
-## Architecture
+## System Architecture
 
 SustainOps is a frontend-only React prototype with local mock data and client-side state.
 
@@ -171,6 +171,45 @@ React / TypeScript / Tailwind / shadcn-style UI
 ```
 
 ---
+
+### Mermaid Architecture Diagram
+
+```mermaid
+flowchart TD
+    A[Role-Based Demo Entry] --> B[App Shell / Navigation]
+    B --> C[Portfolio Dashboard]
+    B --> D[Supplier List + Filters]
+    B --> E[Action Queue]
+    B --> F[Supplier Portal]
+    B --> G[Methodology & Trust Center]
+
+    C --> D
+    C --> H[Supplier Detail Workspace]
+    D --> H
+    E --> H
+
+    H --> H1[Overview]
+    H --> H2[Evidence Review]
+    H --> H3[Compliance Mapping]
+    H --> H4[Remediation Workflow]
+    H --> H5[Activity Timeline]
+
+    F --> I[Supplier Response Actions]
+    I --> H5
+
+    J[Mock Supplier Data] --> C
+    J --> D
+    J --> H
+
+    K[Deterministic Rules] --> C
+    K --> H
+    K --> E
+
+    L[AI-Style Draft Briefs] --> H
+    M[Demo Degraded States] --> C
+    M --> H
+    M --> F
+```
 
 ## AI and deterministic boundaries
 
@@ -246,6 +285,61 @@ Example supplier attributes include:
 This is synthetic data designed for product realism. No real supplier or customer data is used.
 
 ---
+
+## Screenshots
+
+### Demo landing page
+
+The landing page introduces SustainOps and lets evaluators enter the demo workspace using a role-based entry point.
+
+![SustainOps landing page](docs/screenshots/01-landing-page.png)
+
+---
+
+### Portfolio risk dashboard
+
+The dashboard helps users quickly understand supplier risk concentration, evidence gaps, overdue remediation, and suppliers requiring review.
+
+![Supplier risk dashboard](docs/screenshots/02a-dashboard.png)
+![Supplier risk dashboard](docs/screenshots/02b-dashboard.png)
+
+---
+
+### Supplier discovery and filtering
+
+The supplier list supports search and filtering by risk level, category, remediation status, and evidence completeness.
+
+![Supplier list and filters](docs/screenshots/03-supplier-list.png)
+
+---
+
+### Supplier detail workspace
+
+The supplier detail view shows risk drivers, evidence status, compliance context, remediation workflow, and activity history.
+
+![Supplier detail overview](docs/screenshots/04a-supplier-detail-overview.png)
+![Supplier detail overview](docs/screenshots/04b-supplier-detail-overview.png)
+
+---
+
+### Remediation workflow
+
+The remediation workflow connects supplier risk to evidence requests, blocked approval states, supplier response, and auditability.
+
+![Remediation workflow](docs/screenshots/06a-remediation-workflow.png)
+![Remediation workflow](docs/screenshots/06b-remediation-workflow.png)
+
+---
+
+### Methodology and Trust Center
+
+The Trust Center explains risk scoring, evidence completeness, deterministic policy rules, AI boundaries, auditability, degraded states, and demo limitations.
+
+![Methodology and Trust Center](docs/screenshots/08a-trust-center.png)
+![Methodology and Trust Center](docs/screenshots/08b-trust-center.png)
+![Methodology and Trust Center](docs/screenshots/08c-trust-center.png)
+![Methodology and Trust Center](docs/screenshots/08d-trust-center.png)
+
 
 ## What this project demonstrates
 
