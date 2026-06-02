@@ -8,11 +8,13 @@ import { ActionQueuePage } from "@/pages/action-queue-page";
 import { SupplierPortalPage } from "@/pages/supplier-portal-page";
 import { MethodologyPage } from "@/pages/methodology-page";
 import { useRemediationStore } from "@/utils/remediation";
+import type { DemoMode } from "@/utils/demoState";
 import type { Page, Role, SupplierFilters } from "@/types";
 
 interface PageContentProps {
   page: Page;
   role: Role;
+  demoMode: DemoMode;
   supplierDetailId: string | null;
   supplierFilters: SupplierFilters;
   onNavigate: (page: Page, filters?: SupplierFilters) => void;
@@ -24,6 +26,7 @@ interface PageContentProps {
 function PageContent({
   page,
   role,
+  demoMode,
   supplierDetailId,
   supplierFilters,
   onNavigate,
@@ -36,6 +39,7 @@ function PageContent({
       <SupplierDetailPage
         supplierId={supplierDetailId}
         role={role}
+        demoMode={demoMode}
         onBack={onBackFromDetail}
         remediationStore={remediationStore}
       />
@@ -47,6 +51,7 @@ function PageContent({
       return (
         <DashboardPage
           role={role}
+          demoMode={demoMode}
           onNavigate={onNavigate}
           onOpenSupplier={onOpenSupplier}
         />
@@ -55,6 +60,8 @@ function PageContent({
       return (
         <SuppliersPage
           initialFilters={supplierFilters}
+          demoMode={demoMode}
+          role={role}
           onOpenSupplier={onOpenSupplier}
         />
       );
@@ -62,18 +69,20 @@ function PageContent({
       return (
         <ActionQueuePage
           role={role}
+          demoMode={demoMode}
           onOpenSupplier={onOpenSupplier}
           remediationStore={remediationStore}
         />
       );
     case "supplier-portal":
-      return <SupplierPortalPage role={role} remediationStore={remediationStore} />;
+      return <SupplierPortalPage role={role} demoMode={demoMode} remediationStore={remediationStore} />;
     case "methodology":
       return <MethodologyPage role={role} />;
     default:
       return (
         <DashboardPage
           role={role}
+          demoMode={demoMode}
           onNavigate={onNavigate}
           onOpenSupplier={onOpenSupplier}
         />
@@ -86,6 +95,7 @@ export function App() {
   const [currentRole, setCurrentRole] = useState<Role>("procurement");
   const [supplierDetailId, setSupplierDetailId] = useState<string | null>(null);
   const [supplierFilters, setSupplierFilters] = useState<SupplierFilters>({});
+  const [demoMode, setDemoMode] = useState<DemoMode>("normal");
   const remediationStore = useRemediationStore();
 
   function handleRoleChange(role: Role) {
@@ -123,12 +133,15 @@ export function App() {
     <AppLayout
       currentPage={currentPage}
       currentRole={currentRole}
+      demoMode={demoMode}
       onNavigate={(page) => handleNavigate(page)}
       onRoleChange={handleRoleChange}
+      onDemoModeChange={setDemoMode}
     >
       <PageContent
         page={currentPage}
         role={currentRole}
+        demoMode={demoMode}
         supplierDetailId={supplierDetailId}
         supplierFilters={supplierFilters}
         onNavigate={handleNavigate}

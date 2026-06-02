@@ -30,8 +30,11 @@ import { Progress } from "@/components/ui/progress";
 import { SectionHeader } from "@/components/shared/section-header";
 import { RiskBadge } from "@/components/shared/risk-badge";
 import { RemediationBadge } from "@/components/shared/remediation-badge";
+import { RoleContextBanner } from "@/components/shared/role-context-banner";
 import { suppliers } from "@/data/suppliers";
+import type { DemoMode } from "@/utils/demoState";
 import type {
+  Role,
   RiskLevel,
   RemediationStatus,
   SupplierFilters,
@@ -80,10 +83,12 @@ function matchesEvidence(pct: number, bucket: EvidenceCompletionBucket | "all"):
 
 interface SuppliersPageProps {
   initialFilters?: SupplierFilters;
+  demoMode: DemoMode;
+  role: Role;
   onOpenSupplier: (id: string) => void;
 }
 
-export function SuppliersPage({ initialFilters = {}, onOpenSupplier }: SuppliersPageProps) {
+export function SuppliersPage({ initialFilters = {}, demoMode, role, onOpenSupplier }: SuppliersPageProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [search, setSearch] = useState(initialFilters.search ?? "");
   const [riskFilter, setRiskFilter] = useState<string>(initialFilters.riskLevel ?? ALL);
@@ -110,8 +115,10 @@ export function SuppliersPage({ initialFilters = {}, onOpenSupplier }: Suppliers
     initialFilters.evidenceBucket,
   ]);
 
+  const effectiveSuppliers = demoMode === "empty-portfolio" ? [] : suppliers;
+
   const filtered = useMemo(() => {
-    return suppliers.filter((s) => {
+    return effectiveSuppliers.filter((s) => {
       const q = search.toLowerCase();
       const matchesSearch =
         !search ||
@@ -132,7 +139,7 @@ export function SuppliersPage({ initialFilters = {}, onOpenSupplier }: Suppliers
       );
       return matchesSearch && matchesRisk && matchesCat && matchesRem && matchesEv;
     });
-  }, [search, riskFilter, categoryFilter, remediationFilter, evidenceFilter]);
+  }, [search, riskFilter, categoryFilter, remediationFilter, evidenceFilter, demoMode]);
 
   const hasFilters =
     !!search ||
@@ -151,6 +158,7 @@ export function SuppliersPage({ initialFilters = {}, onOpenSupplier }: Suppliers
 
   return (
     <div className="space-y-6">
+      <RoleContextBanner role={role} />
       <SectionHeader
         title="Suppliers"
         description="Monitor sustainability risk and compliance status across your supplier network."

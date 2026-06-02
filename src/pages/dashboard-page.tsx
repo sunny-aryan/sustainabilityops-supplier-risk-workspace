@@ -20,9 +20,11 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/shared/stat-card";
 import { SectionHeader } from "@/components/shared/section-header";
+import { RoleContextBanner } from "@/components/shared/role-context-banner";
 import { RiskBadge } from "@/components/shared/risk-badge";
 import { RemediationBadge } from "@/components/shared/remediation-badge";
 import { suppliers, recentActivity } from "@/data/suppliers";
@@ -31,6 +33,7 @@ import {
   getRiskDistribution,
   getSuppliersNeedingAction,
 } from "@/utils/portfolio";
+import type { DemoMode } from "@/utils/demoState";
 import type { ActivityItem, RiskLevel, Role, Page, SupplierFilters } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -86,28 +89,81 @@ const roleConfig: Record<
     pageDescription:
       "Internal risk overview. As a Supplier User, your primary workspace is the Supplier Portal.",
     actionDescription: "Suppliers currently flagged for attention",
-    alertMessage:
-      "Demo role view: Supplier users would not normally access this internal dashboard. Your primary workspace is the Supplier Portal.",
+    alertMessage: null,
   },
 };
 
 interface DashboardPageProps {
   role: Role;
+  demoMode: DemoMode;
   onNavigate: (page: Page, filters?: SupplierFilters) => void;
   onOpenSupplier: (id: string) => void;
 }
 
-export function DashboardPage({ role, onNavigate, onOpenSupplier }: DashboardPageProps) {
-  const stats = calculatePortfolioStats(suppliers);
-  const riskDist = getRiskDistribution(suppliers);
-  const actionSuppliers = getSuppliersNeedingAction(suppliers);
+export function DashboardPage({ role, demoMode, onNavigate, onOpenSupplier }: DashboardPageProps) {
+  const effectiveSuppliers = demoMode === "empty-portfolio" ? [] : suppliers;
+  const stats = calculatePortfolioStats(effectiveSuppliers);
+  const riskDist = getRiskDistribution(effectiveSuppliers);
+  const actionSuppliers = getSuppliersNeedingAction(effectiveSuppliers);
   const config = roleConfig[role];
 
-  const belowThreshold = suppliers.filter((s) => s.evidenceCompleteness < 60).length;
-  const aboveTarget = suppliers.filter((s) => s.evidenceCompleteness >= 85).length;
+  const belowThreshold = effectiveSuppliers.filter((s) => s.evidenceCompleteness < 60).length;
+  const aboveTarget = effectiveSuppliers.filter((s) => s.evidenceCompleteness >= 85).length;
+
+  if (demoMode === "loading") {
+    return (
+      <div className="space-y-6">
+        <SectionHeader title="Dashboard" description={config.pageDescription} />
+        <Alert className="border-primary/20 bg-primary/5">
+          <Clock className="size-4 text-primary animate-pulse" />
+          <AlertTitle className="text-sm font-semibold text-foreground">
+            Analyzing supplier risk and evidence status…
+          </AlertTitle>
+          <AlertDescription className="text-xs text-muted-foreground">
+            This simulated loading state represents delayed supplier analysis while layout and navigation remain stable.
+          </AlertDescription>
+        </Alert>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="pt-4 space-y-2">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-8 w-14" />
+                <Skeleton className="h-3 w-20" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader><Skeleton className="h-4 w-32" /></CardHeader>
+            <CardContent className="space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <Skeleton className="h-3.5 w-20" />
+                  <Skeleton className="h-2 flex-1" />
+                  <Skeleton className="h-3.5 w-8" />
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><Skeleton className="h-4 w-40" /></CardHeader>
+            <CardContent className="space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      <RoleContextBanner role={role} />
+
       {config.alertMessage && (
         <Alert className="border-warning/30 bg-warning/5">
           <AlertTriangle className="size-4 text-warning" />
@@ -314,79 +370,95 @@ export function DashboardPage({ role, onNavigate, onOpenSupplier }: DashboardPag
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/30">
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Supplier</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Country</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Category</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Risk</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Evidence</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Remediation</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Required Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {actionSuppliers.map((supplier, i) => (
-                  <tr
-                    key={supplier.id}
-                    className={cn(
-                      "border-b last:border-0 cursor-pointer hover:bg-muted/40 transition-colors",
-                      i % 2 === 0 ? "bg-background" : "bg-muted/20"
-                    )}
-                    onClick={() => onOpenSupplier(supplier.id)}
-                    title={`View ${supplier.name} details`}
-                  >
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-foreground leading-tight">{supplier.name}</p>
-                      <p className="text-xs text-muted-foreground">{supplier.owner}</p>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                      {supplier.country}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                      {supplier.category}
-                    </td>
-                    <td className="px-4 py-3">
-                      <RiskBadge level={supplier.riskLevel} score={supplier.riskScore} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 min-w-[80px]">
-                        <Progress
-                          value={supplier.evidenceCompleteness}
-                          className={cn(
-                            "h-1.5 w-12",
-                            supplier.evidenceCompleteness >= 75
-                              ? "[&>[data-slot=progress-indicator]]:bg-success"
-                              : supplier.evidenceCompleteness >= 50
-                              ? "[&>[data-slot=progress-indicator]]:bg-warning"
-                              : "[&>[data-slot=progress-indicator]]:bg-destructive"
-                          )}
-                        />
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                          {supplier.evidenceCompleteness}%
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <RemediationBadge status={supplier.remediationStatus} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="text-xs text-muted-foreground max-w-[220px] leading-relaxed">
-                        {supplier.requiredActions[0] ?? "No pending actions"}
-                      </p>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="border-t px-4 py-2.5">
-            <p className="text-xs text-muted-foreground">
-              {actionSuppliers.length} suppliers · Click a row to view supplier details
-            </p>
-          </div>
+          {actionSuppliers.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-12 px-4 text-center">
+              <CheckCircle2 className="size-10 text-success/40" />
+              <div>
+                <p className="text-sm font-medium text-foreground">No suppliers require immediate action</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {demoMode === "empty-portfolio"
+                    ? "Empty portfolio demo mode is active. Add suppliers to begin monitoring."
+                    : "All suppliers are within acceptable risk thresholds."}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/30">
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Supplier</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Country</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Category</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Risk</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Evidence</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Remediation</th>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground">Required Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {actionSuppliers.map((supplier, i) => (
+                      <tr
+                        key={supplier.id}
+                        className={cn(
+                          "border-b last:border-0 cursor-pointer hover:bg-muted/40 transition-colors",
+                          i % 2 === 0 ? "bg-background" : "bg-muted/20"
+                        )}
+                        onClick={() => onOpenSupplier(supplier.id)}
+                        title={`View ${supplier.name} details`}
+                      >
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-foreground leading-tight">{supplier.name}</p>
+                          <p className="text-xs text-muted-foreground">{supplier.owner}</p>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                          {supplier.country}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                          {supplier.category}
+                        </td>
+                        <td className="px-4 py-3">
+                          <RiskBadge level={supplier.riskLevel} score={supplier.riskScore} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2 min-w-[80px]">
+                            <Progress
+                              value={supplier.evidenceCompleteness}
+                              className={cn(
+                                "h-1.5 w-12",
+                                supplier.evidenceCompleteness >= 75
+                                  ? "[&>[data-slot=progress-indicator]]:bg-success"
+                                  : supplier.evidenceCompleteness >= 50
+                                  ? "[&>[data-slot=progress-indicator]]:bg-warning"
+                                  : "[&>[data-slot=progress-indicator]]:bg-destructive"
+                              )}
+                            />
+                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                              {supplier.evidenceCompleteness}%
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <RemediationBadge status={supplier.remediationStatus} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-xs text-muted-foreground max-w-[220px] leading-relaxed">
+                            {supplier.requiredActions[0] ?? "No pending actions"}
+                          </p>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="border-t px-4 py-2.5">
+                <p className="text-xs text-muted-foreground">
+                  {actionSuppliers.length} suppliers · Click a row to view supplier details
+                </p>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

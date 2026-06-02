@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { SectionHeader } from "@/components/shared/section-header";
+import { RoleContextBanner } from "@/components/shared/role-context-banner";
 import type { Role } from "@/types";
 
 const methodologyCards = [
@@ -91,6 +92,7 @@ const roleDescriptions: Record<Role, string> = {
 export function MethodologyPage({ role }: MethodologyPageProps) {
   return (
     <div className="space-y-6">
+      <RoleContextBanner role={role} />
       <SectionHeader
         title="Methodology & Trust Center"
         description={roleDescriptions[role]}

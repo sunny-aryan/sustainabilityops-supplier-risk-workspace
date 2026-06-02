@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SectionHeader } from "@/components/shared/section-header";
 import {
   Select,
@@ -34,6 +35,7 @@ import { toast } from "sonner";
 import { suppliers } from "@/data/suppliers";
 import { getEvidenceForSupplier } from "@/data/evidence";
 import { useRemediationStore } from "@/utils/remediation";
+import type { DemoMode } from "@/utils/demoState";
 import type { Role, EvidenceItemStatus } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -53,10 +55,11 @@ const evidenceStatusConfig: Record<
 
 interface SupplierPortalPageProps {
   role: Role;
+  demoMode: DemoMode;
   remediationStore: ReturnType<typeof useRemediationStore>;
 }
 
-export function SupplierPortalPage({ role, remediationStore }: SupplierPortalPageProps) {
+export function SupplierPortalPage({ role, demoMode, remediationStore }: SupplierPortalPageProps) {
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>(PORTAL_SUPPLIER_IDS[0]);
 
   const supplier = suppliers.find((s) => s.id === selectedSupplierId);
@@ -127,17 +130,59 @@ export function SupplierPortalPage({ role, remediationStore }: SupplierPortalPag
     <div className="space-y-6">
       <SectionHeader
         title="Supplier Portal"
-        description="Submit evidence, track requests, and manage your compliance obligations."
+        description={
+          role === "supplier"
+            ? "Supplier workspace: review requested evidence, submit responses, and track remediation milestones."
+            : "Submit evidence, track requests, and manage your compliance obligations."
+        }
       />
 
-      {/* Internal role banner */}
+      {demoMode === "loading" && (
+        <div className="space-y-4">
+          <Alert className="border-primary/20 bg-primary/5">
+            <FileCheck2 className="size-4 text-primary animate-pulse" />
+            <AlertTitle className="text-sm font-semibold text-foreground">
+              Analyzing supplier risk and evidence status…
+            </AlertTitle>
+            <AlertDescription className="text-xs text-muted-foreground">
+              This simulated loading state represents delayed supplier analysis while layout and navigation remain stable.
+            </AlertDescription>
+          </Alert>
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-9 w-48" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i}>
+                <CardContent className="pt-4 space-y-2">
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-8 w-10" />
+                  <Skeleton className="h-3 w-28" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <Card>
+            <CardHeader><Skeleton className="h-4 w-40" /></CardHeader>
+            <CardContent className="space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full rounded-md" />
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {demoMode !== "loading" && (
+        <>
+
+      {/* Internal role context note */}
       {isInternalRole && (
-        <Alert className="border-primary/20 bg-primary/5">
-          <Globe className="size-4 text-primary" />
-          <AlertDescription className="text-sm text-muted-foreground">
-            {role === "procurement"
-              ? "You are viewing the Supplier Portal as a Procurement Manager. This is the external-facing workspace your suppliers use to submit evidence and respond to remediation requests."
-              : "You are viewing the Supplier Portal as an ESG / Compliance Analyst. This is the supplier-facing workspace showing what evidence and milestones have been assigned."}
+        <Alert className="border-muted bg-muted/30">
+          <Info className="size-4 text-muted-foreground" />
+          <AlertDescription className="text-xs text-muted-foreground">
+            Demo view: this is the supplier-facing workspace internal teams use to understand the supplier experience.
           </AlertDescription>
         </Alert>
       )}
@@ -432,6 +477,8 @@ export function SupplierPortalPage({ role, remediationStore }: SupplierPortalPag
               <span className="font-medium text-foreground">Important:</span> Submitting evidence marks it for internal review. Your compliance team will verify and approve submissions. Procurement approval remains on hold until all required evidence is reviewed and confirmed. File upload is not implemented in this demo.
             </AlertDescription>
           </Alert>
+        </>
+      )}
         </>
       )}
     </div>

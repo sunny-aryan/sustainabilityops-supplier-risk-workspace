@@ -21,6 +21,9 @@ import {
   AlertOctagon,
   MessageSquare,
   CheckSquare,
+  WifiOff,
+  RefreshCw,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +38,7 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -49,7 +53,9 @@ import { suppliers } from "@/data/suppliers";
 import { getEvidenceForSupplier } from "@/data/evidence";
 import { getComplianceMappingsForSupplier } from "@/data/complianceMappings";
 import { getTimelineForSupplier } from "@/data/activityTimeline";
+import { useState } from "react";
 import { canCompleteMilestone, canEscalatePlan, canSendToSupplier, isProcurementBlocked, useRemediationStore } from "@/utils/remediation";
+import type { DemoMode } from "@/utils/demoState";
 import { toast } from "sonner";
 import type {
   Role,
@@ -69,6 +75,7 @@ import { cn } from "@/lib/utils";
 interface SupplierDetailPageProps {
   supplierId: string;
   role: Role;
+  demoMode: DemoMode;
   onBack: () => void;
   remediationStore: ReturnType<typeof useRemediationStore>;
 }
@@ -569,8 +576,19 @@ function generateAIBrief(supplier: ReturnType<typeof suppliers.find>): string {
 
 // ─── Main component ─────────────────────────────────────────────────────────────
 
-export function SupplierDetailPage({ supplierId, role, onBack, remediationStore }: SupplierDetailPageProps) {
+export function SupplierDetailPage({ supplierId, role, demoMode, onBack, remediationStore }: SupplierDetailPageProps) {
+  const [retrying, setRetrying] = useState(false);
   const supplier = suppliers.find((s) => s.id === supplierId);
+
+  function handleEvidenceRetry() {
+    setRetrying(true);
+    setTimeout(() => {
+      setRetrying(false);
+      toast.info("Demo mode: refresh is simulated.", {
+        description: "Cached supplier evidence remains available. Real-time source is still offline.",
+      });
+    }, 1200);
+  }
 
   if (!supplier) {
     return (
@@ -615,6 +633,66 @@ export function SupplierDetailPage({ supplierId, role, onBack, remediationStore 
       : "[&>[data-slot=progress-indicator]]:bg-destructive";
 
   const aiBrief = generateAIBrief(supplier);
+
+  if (demoMode === "loading") {
+    return (
+      <div className="space-y-6">
+        <Button variant="ghost" size="sm" className="gap-2 -ml-2" onClick={onBack}>
+          <ArrowLeft className="size-4" />
+          Back to Suppliers
+        </Button>
+
+        {/* Loading explanatory callout */}
+        <Alert className="border-primary/20 bg-primary/5">
+          <BrainCircuit className="size-4 text-primary animate-pulse" />
+          <AlertTitle className="text-sm font-semibold text-foreground">
+            Analyzing supplier risk and evidence status…
+          </AlertTitle>
+          <AlertDescription className="text-xs text-muted-foreground">
+            This simulated loading state represents delayed supplier analysis while layout and navigation remain stable.
+          </AlertDescription>
+        </Alert>
+
+        <div className="flex flex-col gap-4 border-b pb-5">
+          <div className="space-y-3">
+            <Skeleton className="h-8 w-56" />
+            <div className="flex gap-4">
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-32" />
+            </div>
+          </div>
+          <Skeleton className="h-14 w-full rounded-lg" />
+        </div>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="pt-4 space-y-2">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-8 w-14" />
+                <Skeleton className="h-4 w-16" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <div className="space-y-3">
+          <Skeleton className="h-9 w-full rounded-none" />
+          <div className="grid grid-cols-2 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i}>
+                <CardHeader className="pb-3"><Skeleton className="h-4 w-28" /></CardHeader>
+                <CardContent className="space-y-2">
+                  <Skeleton className="h-3.5 w-full" />
+                  <Skeleton className="h-3.5 w-5/6" />
+                  <Skeleton className="h-3.5 w-4/5" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -937,33 +1015,71 @@ export function SupplierDetailPage({ supplierId, role, onBack, remediationStore 
           </Card>
 
           {/* AI brief */}
-          <Card className="border-primary/20">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <BrainCircuit className="size-4 text-primary" />
-                    AI-generated draft brief
-                  </CardTitle>
-                  <CardDescription className="text-xs mt-1">
-                    Generated from supplier attributes · Not reviewed · Draft only
-                  </CardDescription>
+          {demoMode === "ai-unavailable" ? (
+            <Card className="border-warning/30 bg-warning/5">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <AlertCircle className="size-4 text-warning" />
+                      AI brief unavailable
+                    </CardTitle>
+                    <CardDescription className="text-xs mt-1">
+                      AI analysis service is temporarily offline
+                    </CardDescription>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] shrink-0 bg-warning/10 text-warning border-warning/30">
+                    Degraded
+                  </Badge>
                 </div>
-                <Badge variant="outline" className="text-[10px] shrink-0 bg-muted text-muted-foreground border-border">
-                  Draft
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground leading-relaxed">{aiBrief}</p>
-              <Alert className="border-muted bg-muted/30 py-2.5">
-                <Info className="size-3.5 text-muted-foreground" />
-                <AlertDescription className="text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">AI boundary:</span> This brief summarizes supplier context from structured data. Deterministic rules govern risk level, blocked actions, and approval eligibility. Human reviewers have final authority on all compliance decisions.
-                </AlertDescription>
-              </Alert>
-            </CardContent>
-          </Card>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Alert className="border-warning/30 bg-warning/5 py-2.5">
+                  <WifiOff className="size-3.5 text-warning" />
+                  <AlertDescription className="text-xs text-muted-foreground">
+                    The AI summary service is unavailable. Deterministic risk data, evidence records, and policy rules below are fully accurate and unaffected.
+                  </AlertDescription>
+                </Alert>
+                <div className="rounded-md border bg-muted/30 p-3 space-y-2 text-xs text-muted-foreground">
+                  <p className="font-medium text-foreground text-sm">Deterministic summary (always available):</p>
+                  <p>Risk score: <span className="text-foreground font-medium">{supplier.riskScore}/100</span> · Level: <span className="text-foreground font-medium capitalize">{supplier.riskLevel}</span></p>
+                  <p>Evidence completeness: <span className="text-foreground font-medium">{supplier.evidenceCompleteness}%</span></p>
+                  <p>Remediation status: <span className="text-foreground font-medium capitalize">{supplier.remediationStatus.replace("-", " ")}</span></p>
+                  {supplier.regulatoryExposure.length > 0 && (
+                    <p>Regulatory scope: <span className="text-foreground font-medium">{supplier.regulatoryExposure.join(", ")}</span></p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="border-primary/20">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <BrainCircuit className="size-4 text-primary" />
+                      AI-generated draft brief
+                    </CardTitle>
+                    <CardDescription className="text-xs mt-1">
+                      Generated from supplier attributes · Not reviewed · Draft only
+                    </CardDescription>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] shrink-0 bg-muted text-muted-foreground border-border">
+                    Draft
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground leading-relaxed">{aiBrief}</p>
+                <Alert className="border-muted bg-muted/30 py-2.5">
+                  <Info className="size-3.5 text-muted-foreground" />
+                  <AlertDescription className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">AI boundary:</span> This brief summarizes supplier context from structured data. Deterministic rules govern risk level, blocked actions, and approval eligibility. Human reviewers have final authority on all compliance decisions.
+                  </AlertDescription>
+                </Alert>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* ── Evidence ─────────────────────────────────────────────────────── */}
@@ -980,86 +1096,117 @@ export function SupplierDetailPage({ supplierId, role, onBack, remediationStore 
             </Button>
           </div>
 
-          {blockingMissing.length > 0 && (
-            <Alert className="border-destructive/30 bg-destructive/5">
-              <FileX className="size-4 text-destructive" />
-              <AlertTitle className="text-sm font-semibold text-destructive">
-                Approval-blocking evidence missing
-              </AlertTitle>
-              <AlertDescription className="text-xs text-muted-foreground">
-                {blockingMissing.map((e) => e.evidenceName).join(", ")} — procurement approval is on hold until these items are submitted and reviewed.
+          {demoMode === "evidence-unavailable" && (            <Alert className="border-warning/30 bg-warning/5">
+              <WifiOff className="size-4 text-warning" />
+              <AlertTitle className="text-sm font-semibold text-warning">Evidence source unavailable</AlertTitle>
+              <AlertDescription className="text-xs text-muted-foreground flex items-center justify-between gap-3">
+                <span>The evidence data source is temporarily offline. Showing last cached records. Real-time status may differ.</span>
+                <Button size="sm" variant="outline" className="shrink-0 h-7 text-xs gap-1.5" onClick={handleEvidenceRetry} disabled={retrying}>
+                  <RefreshCw className={cn("size-3", retrying && "animate-spin")} />
+                  {retrying ? "Retrying…" : "Retry"}
+                </Button>
               </AlertDescription>
             </Alert>
           )}
 
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Evidence Item</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead>Blocks Approval</TableHead>
-                    <TableHead>Notes</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {evidenceList.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
-                        No evidence records for this supplier.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    evidenceList.map((item) => {
-                      const statusCfg = evidenceStatusConfig[item.status];
-                      return (
-                        <TableRow key={item.id} className={cn(
-                          item.blocksApproval && (item.status === "Missing" || item.status === "Expired")
-                            ? "bg-destructive/5"
-                            : ""
-                        )}>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium text-foreground text-sm leading-tight">{item.evidenceName}</p>
-                              <p className="text-xs text-muted-foreground">{item.owner}</p>
+          {demoMode === "stale-data" && (
+            <Alert className="border-warning/20 bg-warning/5">
+              <Clock className="size-4 text-warning" />
+              <AlertTitle className="text-sm font-semibold text-warning">Evidence data may be stale</AlertTitle>
+              <AlertDescription className="text-xs text-muted-foreground">
+                Last refreshed more than 30 days ago. Evidence statuses shown below may not reflect the current state. Request a manual refresh from the data team.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {blockingMissing.length > 0 && (
+                <Alert className="border-destructive/30 bg-destructive/5">
+                  <FileX className="size-4 text-destructive" />
+                  <AlertTitle className="text-sm font-semibold text-destructive">
+                    Approval-blocking evidence missing
+                  </AlertTitle>
+                  <AlertDescription className="text-xs text-muted-foreground">
+                    {blockingMissing.map((e) => e.evidenceName).join(", ")} — procurement approval is on hold until these items are submitted and reviewed.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <Card>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Evidence Item</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Source</TableHead>
+                        <TableHead>Due Date</TableHead>
+                        <TableHead>Blocks Approval</TableHead>
+                        <TableHead>Notes</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {evidenceList.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="py-10 text-center">
+                            <div className="flex flex-col items-center gap-2">
+                              <FileCheck2 className="size-8 text-muted-foreground/30" />
+                              <p className="text-sm text-muted-foreground">No evidence records for this supplier.</p>
                             </div>
                           </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{item.category}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={cn("text-xs", statusCfg.className)}>
-                              {statusCfg.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{item.sourceType}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{item.dueDate}</TableCell>
-                          <TableCell>
-                            {item.blocksApproval ? (
-                              <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">
-                                Yes
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground/60">No</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground max-w-[200px] leading-relaxed">{item.notes}</TableCell>
                         </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
-              <div className="border-t px-4 py-2.5">
-                <p className="text-xs text-muted-foreground">
-                  {evidenceList.filter((e) => e.status === "Complete").length} complete · {evidenceList.filter((e) => e.status === "Missing" || e.status === "Expired").length} missing/expired · {evidenceList.filter((e) => e.status === "Under Review" || e.status === "Requested").length} in progress
-                  {" · "}Evidence upload available in the next milestone.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+                      ) : (
+                        evidenceList.map((item) => {
+                          const statusCfg = evidenceStatusConfig[item.status];
+                          return (
+                            <TableRow key={item.id} className={cn(
+                              item.blocksApproval && (item.status === "Missing" || item.status === "Expired")
+                                ? "bg-destructive/5"
+                                : ""
+                            )}>
+                              <TableCell>
+                                <div className="space-y-0.5">
+                                  <p className="font-medium text-foreground text-sm leading-tight">{item.evidenceName}</p>
+                                  <p className="text-xs text-muted-foreground">{item.owner}</p>
+                                  {demoMode === "stale-data" && (
+                                    <Badge variant="outline" className="text-[9px] h-3.5 px-1 bg-warning/10 text-warning border-warning/20">
+                                      Stale
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{item.category}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={cn("text-xs", statusCfg.className)}>
+                                  {statusCfg.label}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{item.sourceType}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{item.dueDate}</TableCell>
+                              <TableCell>
+                                {item.blocksApproval ? (
+                                  <Badge variant="outline" className="text-[10px] bg-destructive/10 text-destructive border-destructive/20">
+                                    Yes
+                                  </Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground/60">No</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground max-w-[200px] leading-relaxed">{item.notes}</TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                  <div className="border-t px-4 py-2.5">
+                    <p className="text-xs text-muted-foreground">
+                      {evidenceList.filter((e) => e.status === "Complete").length} complete · {evidenceList.filter((e) => e.status === "Missing" || e.status === "Expired").length} missing/expired · {evidenceList.filter((e) => e.status === "Under Review" || e.status === "Requested").length} in progress
+                      {" · "}Evidence upload available in the next milestone.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
         </TabsContent>
 
         {/* ── Compliance Mapping ───────────────────────────────────────────── */}

@@ -1,18 +1,20 @@
-import { AlertCircle, AlertTriangle, FileX, SearchCheck, ArrowRight, AlertOctagon, MessageSquare } from "lucide-react";
+import { AlertTriangle, FileX, SearchCheck, ArrowRight, AlertOctagon, MessageSquare } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SectionHeader } from "@/components/shared/section-header";
 import { RiskBadge } from "@/components/shared/risk-badge";
 import { RemediationBadge } from "@/components/shared/remediation-badge";
+import { RoleContextBanner } from "@/components/shared/role-context-banner";
 import { suppliers } from "@/data/suppliers";
 import { useRemediationStore } from "@/utils/remediation";
+import type { DemoMode } from "@/utils/demoState";
 import type { Role, Supplier, RemediationPlan } from "@/types";
 import { cn } from "@/lib/utils";
 
 interface ActionQueuePageProps {
   role: Role;
+  demoMode: DemoMode;
   onOpenSupplier: (id: string) => void;
   remediationStore: ReturnType<typeof useRemediationStore>;
 }
@@ -95,16 +97,18 @@ function ActionCard({
   );
 }
 
-export function ActionQueuePage({ role, onOpenSupplier, remediationStore }: ActionQueuePageProps) {
+export function ActionQueuePage({ role, demoMode, onOpenSupplier, remediationStore }: ActionQueuePageProps) {
   const { plans } = remediationStore;
+  const effectiveSuppliers = demoMode === "empty-portfolio" ? [] : suppliers;
+  const effectivePlans = demoMode === "empty-portfolio" ? [] : plans;
 
   // ── Build workflow-aware groups ────────────────────────────────────────────
 
   // Overdue & Escalated plans
-  const overdueItems = plans
+  const overdueItems = effectivePlans
     .filter((p) => p.status === "Overdue" || p.status === "Escalated")
     .map((p) => {
-      const s = suppliers.find((s) => s.id === p.supplierId)!;
+      const s = effectiveSuppliers.find((s) => s.id === p.supplierId)!;
       return {
         supplier: s,
         reason:
@@ -117,10 +121,10 @@ export function ActionQueuePage({ role, onOpenSupplier, remediationStore }: Acti
     .filter((x) => x.supplier);
 
   // Supplier responded — needs internal review
-  const respondedItems = plans
+  const respondedItems = effectivePlans
     .filter((p) => p.status === "Supplier Responded")
     .map((p) => {
-      const s = suppliers.find((s) => s.id === p.supplierId)!;
+      const s = effectiveSuppliers.find((s) => s.id === p.supplierId)!;
       const submittedMilestones = p.milestones.filter((m) => m.status === "Submitted").length;
       return {
         supplier: s,
@@ -131,7 +135,7 @@ export function ActionQueuePage({ role, onOpenSupplier, remediationStore }: Acti
     .filter((x) => x.supplier);
 
   // Blocking evidence missing (no remediation plan item already covers this)
-  const blockingEvidenceItems = suppliers
+  const blockingEvidenceItems = effectiveSuppliers
     .filter(
       (s) =>
         (s.evidenceCompleteness < 60 || s.riskLevel === "critical" || s.riskLevel === "high") &&
@@ -143,11 +147,11 @@ export function ActionQueuePage({ role, onOpenSupplier, remediationStore }: Acti
     .map((s) => ({
       supplier: s,
       reason: `Evidence completeness at ${s.evidenceCompleteness}% — approval-blocking items may be outstanding.`,
-      plan: plans.find((p) => p.supplierId === s.id),
+      plan: effectivePlans.find((p) => p.supplierId === s.id),
     }));
 
   // Review required: high-criticality + evidence gaps (not already in above groups)
-  const reviewItems = suppliers
+  const reviewItems = effectiveSuppliers
     .filter(
       (s) =>
         s.criticality === "High" &&
@@ -160,7 +164,7 @@ export function ActionQueuePage({ role, onOpenSupplier, remediationStore }: Acti
     .map((s) => ({
       supplier: s,
       reason: `High-criticality supplier with ${s.evidenceCompleteness}% evidence completeness. Manual compliance review recommended.`,
-      plan: plans.find((p) => p.supplierId === s.id),
+      plan: effectivePlans.find((p) => p.supplierId === s.id),
     }));
 
   const actionGroups: ActionGroup[] = [
@@ -211,7 +215,7 @@ export function ActionQueuePage({ role, onOpenSupplier, remediationStore }: Acti
   ];
 
   // Legacy: high-risk suppliers not in any group above
-  const highRiskSuppliers = suppliers
+  const highRiskSuppliers = effectiveSuppliers
     .filter(
       (s) =>
         (s.riskLevel === "critical" || s.riskLevel === "high") &&
@@ -239,7 +243,7 @@ export function ActionQueuePage({ role, onOpenSupplier, remediationStore }: Acti
           s.riskDrivers.length > 0
             ? s.riskDrivers[0]
             : `Risk score ${s.riskScore} — above action threshold`,
-        plan: plans.find((p) => p.supplierId === s.id),
+        plan: effectivePlans.find((p) => p.supplierId === s.id),
       })),
     });
   }
@@ -248,16 +252,8 @@ export function ActionQueuePage({ role, onOpenSupplier, remediationStore }: Acti
 
   return (
     <div className="space-y-6">
+      <RoleContextBanner role={role} />
       <SectionHeader title="Action Queue" description={roleDescriptions[role]} />
-
-      {role === "supplier" && (
-        <Alert className="border-warning/30 bg-warning/5">
-          <AlertCircle className="size-4 text-warning" />
-          <AlertDescription className="text-sm text-muted-foreground">
-            Demo role view: Supplier users would not normally access this internal queue. Your evidence requests and remediation milestones are managed in the Supplier Portal.
-          </AlertDescription>
-        </Alert>
-      )}
 
       <div className="flex items-center gap-2">
         <Badge variant="outline" className="bg-muted text-muted-foreground text-xs">
@@ -271,7 +267,22 @@ export function ActionQueuePage({ role, onOpenSupplier, remediationStore }: Acti
       </div>
 
       <div className="space-y-4">
-        {actionGroups.map((group) => {
+        {totalItems === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
+              <SearchCheck className="size-10 text-success/40" />
+              <div>
+                <p className="text-sm font-medium text-foreground">No items require attention</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {demoMode === "empty-portfolio"
+                    ? "Empty portfolio demo mode is active. Add suppliers to begin monitoring."
+                    : "All suppliers are within acceptable thresholds. Check back after the next scheduled review."}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          actionGroups.map((group) => {
           if (group.items.length === 0) return null;
           const Icon = group.icon;
           return (
@@ -302,7 +313,8 @@ export function ActionQueuePage({ role, onOpenSupplier, remediationStore }: Acti
               </CardContent>
             </Card>
           );
-        })}
+        })
+        )}
       </div>
     </div>
   );
