@@ -24,6 +24,7 @@ import {
   WifiOff,
   RefreshCw,
   AlertCircle,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -77,6 +78,7 @@ interface SupplierDetailPageProps {
   role: Role;
   demoMode: DemoMode;
   onBack: () => void;
+  onNavigateToMethodology?: () => void;
   remediationStore: ReturnType<typeof useRemediationStore>;
 }
 
@@ -576,7 +578,7 @@ function generateAIBrief(supplier: ReturnType<typeof suppliers.find>): string {
 
 // ─── Main component ─────────────────────────────────────────────────────────────
 
-export function SupplierDetailPage({ supplierId, role, demoMode, onBack, remediationStore }: SupplierDetailPageProps) {
+export function SupplierDetailPage({ supplierId, role, demoMode, onBack, onNavigateToMethodology, remediationStore }: SupplierDetailPageProps) {
   const [retrying, setRetrying] = useState(false);
   const supplier = suppliers.find((s) => s.id === supplierId);
 
@@ -787,6 +789,15 @@ export function SupplierDetailPage({ supplierId, role, demoMode, onBack, remedia
             </div>
             <p className="text-3xl font-bold text-foreground">{supplier.riskScore}</p>
             <RiskBadge level={supplier.riskLevel} className="mt-2 text-[10px] h-5" />
+            {onNavigateToMethodology && (
+              <button
+                onClick={onNavigateToMethodology}
+                className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+              >
+                <ExternalLink className="size-2.5" />
+                Scoring methodology
+              </button>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -797,6 +808,15 @@ export function SupplierDetailPage({ supplierId, role, demoMode, onBack, remedia
             </div>
             <p className="text-3xl font-bold text-foreground">{supplier.evidenceCompleteness}%</p>
             <Progress value={supplier.evidenceCompleteness} className={cn("h-1.5 mt-2", evidenceColor)} />
+            {onNavigateToMethodology && (
+              <button
+                onClick={onNavigateToMethodology}
+                className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+              >
+                <ExternalLink className="size-2.5" />
+                Evidence methodology
+              </button>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -1064,9 +1084,20 @@ export function SupplierDetailPage({ supplierId, role, demoMode, onBack, remedia
                       Generated from supplier attributes · Not reviewed · Draft only
                     </CardDescription>
                   </div>
-                  <Badge variant="outline" className="text-[10px] shrink-0 bg-muted text-muted-foreground border-border">
-                    Draft
-                  </Badge>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {onNavigateToMethodology && (
+                      <button
+                        onClick={onNavigateToMethodology}
+                        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                      >
+                        <ExternalLink className="size-2.5" />
+                        AI boundaries
+                      </button>
+                    )}
+                    <Badge variant="outline" className="text-[10px] bg-muted text-muted-foreground border-border">
+                      Draft
+                    </Badge>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -1091,9 +1122,20 @@ export function SupplierDetailPage({ supplierId, role, demoMode, onBack, remedia
                 Evidence completeness determines supplier approval eligibility. Missing approval-blocking evidence triggers a procurement hold regardless of risk score.
               </p>
             </div>
-            <Button variant="outline" size="sm" disabled className="shrink-0 opacity-50 gap-2 text-xs">
-              Request Evidence
-            </Button>
+            <div className="flex items-center gap-3 shrink-0">
+              {onNavigateToMethodology && (
+                <button
+                  onClick={onNavigateToMethodology}
+                  className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                >
+                  <ExternalLink className="size-2.5" />
+                  How evidence works
+                </button>
+              )}
+              <Button variant="outline" size="sm" disabled className="opacity-50 gap-2 text-xs">
+                Request Evidence
+              </Button>
+            </div>
           </div>
 
           {demoMode === "evidence-unavailable" && (            <Alert className="border-warning/30 bg-warning/5">
@@ -1211,11 +1253,22 @@ export function SupplierDetailPage({ supplierId, role, demoMode, onBack, remedia
 
         {/* ── Compliance Mapping ───────────────────────────────────────────── */}
         <TabsContent value="compliance" className="mt-6 space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">Compliance Framework Mapping</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Readiness is determined by evidence completeness and supplier attributes. This is a demo readiness model — not legal advice.
-            </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Compliance Framework Mapping</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Readiness is determined by evidence completeness and supplier attributes. This is a demo readiness model — not legal advice.
+              </p>
+            </div>
+            {onNavigateToMethodology && (
+              <button
+                onClick={onNavigateToMethodology}
+                className="shrink-0 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+              >
+                <ExternalLink className="size-2.5" />
+                How readiness is determined
+              </button>
+            )}
           </div>
 
           <Alert className="border-muted bg-muted/30 py-2.5">

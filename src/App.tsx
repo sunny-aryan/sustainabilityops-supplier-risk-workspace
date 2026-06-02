@@ -41,6 +41,7 @@ function PageContent({
         role={role}
         demoMode={demoMode}
         onBack={onBackFromDetail}
+        onNavigateToMethodology={() => onNavigate("methodology")}
         remediationStore={remediationStore}
       />
     );
@@ -71,6 +72,7 @@ function PageContent({
           role={role}
           demoMode={demoMode}
           onOpenSupplier={onOpenSupplier}
+          onNavigate={onNavigate}
           remediationStore={remediationStore}
         />
       );

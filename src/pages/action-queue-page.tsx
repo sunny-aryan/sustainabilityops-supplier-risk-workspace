@@ -1,4 +1,4 @@
-import { AlertTriangle, FileX, SearchCheck, ArrowRight, AlertOctagon, MessageSquare } from "lucide-react";
+import { AlertTriangle, FileX, SearchCheck, ArrowRight, AlertOctagon, MessageSquare, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,13 +9,14 @@ import { RoleContextBanner } from "@/components/shared/role-context-banner";
 import { suppliers } from "@/data/suppliers";
 import { useRemediationStore } from "@/utils/remediation";
 import type { DemoMode } from "@/utils/demoState";
-import type { Role, Supplier, RemediationPlan } from "@/types";
+import type { Page, Role, Supplier, RemediationPlan } from "@/types";
 import { cn } from "@/lib/utils";
 
 interface ActionQueuePageProps {
   role: Role;
   demoMode: DemoMode;
   onOpenSupplier: (id: string) => void;
+  onNavigate?: (page: Page) => void;
   remediationStore: ReturnType<typeof useRemediationStore>;
 }
 
@@ -97,7 +98,7 @@ function ActionCard({
   );
 }
 
-export function ActionQueuePage({ role, demoMode, onOpenSupplier, remediationStore }: ActionQueuePageProps) {
+export function ActionQueuePage({ role, demoMode, onOpenSupplier, onNavigate, remediationStore }: ActionQueuePageProps) {
   const { plans } = remediationStore;
   const effectiveSuppliers = demoMode === "empty-portfolio" ? [] : suppliers;
   const effectivePlans = demoMode === "empty-portfolio" ? [] : plans;
@@ -173,8 +174,8 @@ export function ActionQueuePage({ role, demoMode, onOpenSupplier, remediationSto
       title: "Overdue & Escalated",
       description:
         role === "esg-analyst"
-          ? "Remediation plans past their due date or escalated for senior ESG review. Immediate action required."
-          : "Overdue or escalated remediation plans requiring procurement or ESG review.",
+          ? "Overdue remediation: plans past due date and not complete. Escalated plans require senior ESG review before they can progress. Rule: past due date → overdue flag; escalated flag → analyst review required."
+          : "Remediation plans past their due date or escalated for senior ESG review. Rule: overdue plans are automatically flagged and appear here until resolved.",
       icon: AlertOctagon,
       iconColor: "text-destructive",
       headerBorderColor: "border-destructive/20",
@@ -184,7 +185,7 @@ export function ActionQueuePage({ role, demoMode, onOpenSupplier, remediationSto
       id: "supplier-responded",
       title: "Supplier Response Received",
       description:
-        "Supplier has responded to a remediation request. Evidence submitted for internal review.",
+        "Supplier has submitted evidence or milestone responses. Rule: supplier submission moves status to Under Review — not automatically Complete. Internal review is required before evidence counts toward completeness.",
       icon: MessageSquare,
       iconColor: "text-success",
       headerBorderColor: "border-success/20",
@@ -195,8 +196,8 @@ export function ActionQueuePage({ role, demoMode, onOpenSupplier, remediationSto
       title: "Blocking Evidence Missing",
       description:
         role === "esg-analyst"
-          ? "Suppliers with missing approval-blocking evidence or critically low evidence completeness. Review and request missing documentation."
-          : "Suppliers with incomplete evidence. Sourcing decisions are blocked until resolved.",
+          ? "Blocking evidence missing: mandatory evidence is Missing or Expired. Rule: missing or expired approval-blocking evidence triggers a procurement hold regardless of risk score. Review and request missing documentation."
+          : "Mandatory evidence is Missing or Expired. Rule: approval-blocking evidence gaps prevent procurement decisions from proceeding until resolved.",
       icon: FileX,
       iconColor: "text-warning",
       headerBorderColor: "border-warning/20",
@@ -206,7 +207,7 @@ export function ActionQueuePage({ role, demoMode, onOpenSupplier, remediationSto
       id: "review-required",
       title: "Review Required",
       description:
-        "High-criticality suppliers with evidence gaps flagged for manual compliance review.",
+        "Deterministic policy rule triggered: High-criticality supplier with evidence completeness 60–74%. Rule: evidence < 75% AND criticality = High → manual compliance review required. No blocking hold is active, but analyst review is needed.",
       icon: SearchCheck,
       iconColor: "text-primary",
       headerBorderColor: "border-primary/20",
@@ -232,8 +233,8 @@ export function ActionQueuePage({ role, demoMode, onOpenSupplier, remediationSto
       title: "Critical & High Risk Suppliers",
       description:
         role === "esg-analyst"
-          ? "Suppliers with critical or high risk scores requiring evidence review and compliance assessment."
-          : "Suppliers with critical or high risk scores requiring sourcing review or escalation.",
+          ? "Risk score ≥ 75 (deterministic threshold). These suppliers require evidence review and compliance assessment. Rule: score ≥ 90 = Critical, score ≥ 75 = High."
+          : "Risk score ≥ 75 (deterministic threshold). Rule: score ≥ 90 = Critical risk, score ≥ 75 = High risk. These suppliers require sourcing review or escalation decision.",
       icon: AlertTriangle,
       iconColor: "text-destructive",
       headerBorderColor: "border-destructive/20",
@@ -255,14 +256,25 @@ export function ActionQueuePage({ role, demoMode, onOpenSupplier, remediationSto
       <RoleContextBanner role={role} />
       <SectionHeader title="Action Queue" description={roleDescriptions[role]} />
 
-      <div className="flex items-center gap-2">
-        <Badge variant="outline" className="bg-muted text-muted-foreground text-xs">
-          {totalItems} items requiring attention
-        </Badge>
-        {respondedItems.length > 0 && (
-          <Badge variant="outline" className="bg-success/10 text-success border-success/20 text-xs">
-            {respondedItems.length} supplier response{respondedItems.length > 1 ? "s" : ""} to review
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="bg-muted text-muted-foreground text-xs">
+            {totalItems} items requiring attention
           </Badge>
+          {respondedItems.length > 0 && (
+            <Badge variant="outline" className="bg-success/10 text-success border-success/20 text-xs">
+              {respondedItems.length} supplier response{respondedItems.length > 1 ? "s" : ""} to review
+            </Badge>
+          )}
+        </div>
+        {onNavigate && (
+          <button
+            onClick={() => onNavigate("methodology")}
+            className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+          >
+            <ExternalLink className="size-3" />
+            View policy rules
+          </button>
         )}
       </div>
 

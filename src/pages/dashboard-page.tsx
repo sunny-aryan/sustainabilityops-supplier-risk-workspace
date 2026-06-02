@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   Users,
   ChevronRight,
+  ExternalLink,
 } from "lucide-react";
 import {
   Card,
@@ -258,10 +259,22 @@ export function DashboardPage({ role, demoMode, onNavigate, onOpenSupplier }: Da
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Risk Distribution</CardTitle>
-            <CardDescription className="text-xs">
-              Deterministic scoring across 5 ESG dimensions. Score ≥ 90 = Critical, ≥ 75 = High, ≥ 45 = Medium.
-            </CardDescription>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <CardTitle className="text-base">Risk Distribution</CardTitle>
+                <CardDescription className="text-xs">
+                  Deterministic scoring across 5 ESG dimensions. Score ≥ 90 = Critical, ≥ 75 = High, ≥ 45 = Medium.
+                </CardDescription>
+              </div>
+              <button
+                onClick={() => onNavigate("methodology")}
+                className="shrink-0 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                title="View risk scoring methodology"
+              >
+                <ExternalLink className="size-3" />
+                How risk is calculated
+              </button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {riskDist.map((item) => (
@@ -303,10 +316,22 @@ export function DashboardPage({ role, demoMode, onNavigate, onOpenSupplier }: Da
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Evidence Completeness</CardTitle>
-            <CardDescription className="text-xs">
-              Evidence completeness determines whether suppliers can proceed through approval and procurement gating.
-            </CardDescription>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <CardTitle className="text-base">Evidence Completeness</CardTitle>
+                <CardDescription className="text-xs">
+                  Evidence completeness determines whether suppliers can proceed through approval and procurement gating.
+                </CardDescription>
+              </div>
+              <button
+                onClick={() => onNavigate("methodology")}
+                className="shrink-0 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                title="View evidence completeness methodology"
+              >
+                <ExternalLink className="size-3" />
+                How evidence works
+              </button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-1.5">
